@@ -1,1 +1,1 @@
-from .ResNetsFPN import ResNetsFPN
+from .FPNResNets import FPNResNets

@@ -71,9 +71,9 @@ NUM_WARMUP_STEPS = 500
 # image size (max_len, min_len)
 IMAGESIZE_DICT = {'LONG_SIDE': 1333, 'SHORT_SIDE': 800}
 # record
-TRAIN_BACKUPDIR = 'faster_res50_trainbackup_coco'
-TRAIN_LOGFILE = 'faster_res50_trainbackup_coco/train.log'
-TEST_BACKUPDIR = 'faster_res50_testbackup_coco'
-TEST_LOGFILE = 'faster_res50_testbackup_coco/test.log'
-TEST_BBOXES_SAVE_PATH = 'faster_res50_testbackup_coco/faster_res50_detection_results_coco.json'
+TRAIN_BACKUPDIR = 'fpn_res50_trainbackup_coco'
+TRAIN_LOGFILE = 'fpn_res50_trainbackup_coco/train.log'
+TEST_BACKUPDIR = 'fpn_res50_testbackup_coco'
+TEST_LOGFILE = 'fpn_res50_testbackup_coco/test.log'
+TEST_BBOXES_SAVE_PATH = 'fpn_res50_testbackup_coco/fpn_res50_detection_results_coco.json'
 SAVE_INTERVAL = 1
