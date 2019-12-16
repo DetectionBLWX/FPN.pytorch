@@ -11,8 +11,8 @@ import torch.nn as nn
 import torch.optim as optim
 from modules.utils.utils import *
 from modules.utils.datasets import *
-from modules.fasterRCNN import FasterRCNNResNets
 from cfgs.getcfg import getCfgByDatasetAndBackbone
+from modules.fasterRCNN import FasterRCNNFPNResNets
 warnings.filterwarnings("ignore")
 
 
@@ -43,7 +43,7 @@ def train():
 		raise ValueError('Unsupport datasetname <%s> now...' % args.datasetname)
 	# prepare model
 	if args.backbonename.find('resnet') != -1:
-		model = FasterRCNNResNets(mode='TRAIN', cfg=cfg, logger_handle=logger_handle)
+		model = FasterRCNNFPNResNets(mode='TRAIN', cfg=cfg, logger_handle=logger_handle)
 	else:
 		raise ValueError('Unsupport backbonename <%s> now...' % args.backbonename)
 	start_epoch = 1

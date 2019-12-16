@@ -11,8 +11,8 @@ from modules.utils.utils import *
 from modules.utils.datasets import *
 from libs.nms.nms_wrapper import nms
 from PIL import Image, ImageDraw, ImageFont
-from modules.fasterRCNN import FasterRCNNResNets
 from cfgs.getcfg import getCfgByDatasetAndBackbone
+from modules.fasterRCNN import FasterRCNNFPNResNets
 
 
 '''parse arguments for training'''
@@ -39,7 +39,7 @@ def demo():
 	clsnames = loadclsnames(cfg.CLSNAMESPATH)
 	# prepare model
 	if args.backbonename.find('resnet') != -1:
-		model = FasterRCNNResNets(mode='TEST', cfg=cfg, logger_handle=logger_handle)
+		model = FasterRCNNFPNResNets(mode='TEST', cfg=cfg, logger_handle=logger_handle)
 	else:
 		raise ValueError('Unsupport backbonename <%s> now...' % args.backbonename)
 	if use_cuda:

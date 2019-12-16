@@ -11,8 +11,8 @@ import numpy as np
 from modules.utils.utils import *
 from modules.utils.datasets import *
 from libs.nms.nms_wrapper import nms
-from modules.fasterRCNN import FasterRCNNResNets
 from cfgs.getcfg import getCfgByDatasetAndBackbone
+from modules.fasterRCNN import FasterRCNNFPNResNets
 
 
 '''parse arguments for training'''
@@ -45,7 +45,7 @@ def test():
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 	# prepare model
 	if args.backbonename.find('resnet') != -1:
-		model = FasterRCNNResNets(mode='TEST', cfg=cfg, logger_handle=logger_handle)
+		model = FasterRCNNFPNResNets(mode='TEST', cfg=cfg, logger_handle=logger_handle)
 	else:
 		raise ValueError('Unsupport backbonename <%s> now...' % args.backbonename)
 	if use_cuda:
