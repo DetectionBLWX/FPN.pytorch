@@ -1,2 +1,1 @@
-'''load all backbones'''
-from .resnet import ResNets
+from .FPNResNets import FPNResNets

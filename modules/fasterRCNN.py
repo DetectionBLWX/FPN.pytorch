@@ -129,9 +129,9 @@ class buildProposalTargetLayer(nn.Module):
 
 
 '''base model for faster rcnn'''
-class fasterRCNNBase(nn.Module):
+class fasterRCNNFPNBase(nn.Module):
 	def __init__(self, num_classes, is_class_agnostic, feature_stride, mode, cfg, **kwargs):
-		super(fasterRCNNBase, self).__init__()
+		super(fasterRCNNFPNBase, self).__init__()
 		self.num_classes = num_classes
 		self.is_class_agnostic = is_class_agnostic
 		self.feature_stride = feature_stride
@@ -144,7 +144,7 @@ class fasterRCNNBase(nn.Module):
 			self.pooling_method = cfg.TEST_POOLING_METHOD
 			self.pooling_size = cfg.TEST_POOLING_SIZE
 		else:
-			raise ValueError('Unkown mode <%s> in fasterRCNNBase...' % mode)
+			raise ValueError('Unkown mode <%s> in fasterRCNNFPNBase...' % mode)
 		# base model
 		self.base_model = None
 		# RPN
@@ -162,9 +162,11 @@ class fasterRCNNBase(nn.Module):
 	def forward(self, x, gt_boxes, img_info, num_gt_boxes):
 		batch_size = x.size(0)
 		# extract features using backbone network
-		x = self.base_model(x)
+		p2, p3, p4, p5, p6 = self.base_model(x)
+		rpn_features = [p2, p3, p4, p5, p6]
+		rcnn_features = [p2, p3, p4, p5]
 		# obtain rois
-		rois, rpn_cls_loss, rpn_loc_loss = self.rpn_net(x, gt_boxes, img_info, num_gt_boxes)
+		rois, rpn_cls_loss, rpn_loc_loss = self.rpn_net(rpn_features, gt_boxes, img_info, num_gt_boxes)
 		# if train
 		if self.mode == 'TRAIN' and gt_boxes is not None:
 			rois, rois_labels, rois_bbox_targets, rois_bbox_inside_weights, rois_bbox_outside_weights = self.build_proposal_target_layer(rois, gt_boxes, num_gt_boxes)
@@ -180,7 +182,7 @@ class fasterRCNNBase(nn.Module):
 		# roi pooling based on obtained rois
 		if self.pooling_method == 'crop':
 			grid_size = self.pooling_size * 2
-			grid_xy = fasterRCNNBase.affineGridGen(rois.view(-1, 5), x.size()[2:], grid_size, self.feature_stride)
+			grid_xy = fasterRCNNFPNBase.affineGridGen(rois.view(-1, 5), x.size()[2:], grid_size, self.feature_stride)
 			grid_yx = torch.stack([grid_xy.data[:, :, :, 1], grid_xy.data[:, :, :, 0]], 3)
 			pooled_features = self.roi_crop(x, grid_yx.detach())
 			pooled_features = F.max_pool2d(pooled_features, 2, 2)
@@ -189,7 +191,7 @@ class fasterRCNNBase(nn.Module):
 		elif self.pooling_method == 'pool':
 			pooled_features = self.roi_pooling(x, rois.view(-1, 5))
 		else:
-			raise ValueError('Unkown pooling_method <%s> in fasterRCNNBase...' % self.pooling_method)
+			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
 		# feed into top model
 		pooled_features = self.top_model(pooled_features)
 		if len(pooled_features.size()) == 4:
@@ -228,11 +230,11 @@ class fasterRCNNBase(nn.Module):
 	'''initialize except for backbone network'''
 	def initializeAddedModules(self):
 		if self.cfg.USE_CAFFE_PRETRAINED_MODEL and self.cfg.RCNN_REG_LOSS_SET['type'] == 'smoothL1Loss':
-			fasterRCNNBase.initWeights(self.rpn_net.rpn_conv_trans[0], 0, 0.01, False)
-			fasterRCNNBase.initWeights(self.rpn_net.rpn_conv_cls, 0, 0.01, False)
-			fasterRCNNBase.initWeights(self.rpn_net.rpn_conv_loc, 0, 0.01, False)
-			fasterRCNNBase.initWeights(self.fc_cls, 0, 0.01, False)
-			fasterRCNNBase.initWeights(self.fc_loc, 0, 0.001, False)
+			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_trans[0], 0, 0.01, False)
+			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_cls, 0, 0.01, False)
+			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_loc, 0, 0.01, False)
+			fasterRCNNFPNBase.initWeights(self.fc_cls, 0, 0.01, False)
+			fasterRCNNFPNBase.initWeights(self.fc_loc, 0, 0.001, False)
 	'''random normal or truncated normal'''
 	@staticmethod
 	def initWeights(m, mean, stddev, truncated=False):
@@ -262,73 +264,63 @@ class fasterRCNNBase(nn.Module):
 			for p in m.parameters():
 				p.requires_grad = False
 	'''set bn eval'''
+	@staticmethod
 	def setBnEval(m):
 		classname = m.__class__.__name__
 		if classname.find('BatchNorm') != -1:
 			m.eval()
 
 
-'''faster rcnn using resnet backbones'''
-class FasterRCNNResNets(fasterRCNNBase):
-	feature_stride = 16.0
+'''faster rcnn using resnet-FPN backbones'''
+class FasterRCNNFPNResNets(fasterRCNNFPNBase):
+	rpn_feature_strides = [4, 8, 16, 32]
+	rcnn_feature_strides = [4, 8, 16, 32, 64]
 	def __init__(self, mode, cfg, logger_handle, **kwargs):
-		fasterRCNNBase.__init__(self, cfg.NUM_CLASSES, cfg.IS_CLASS_AGNOSTIC, FasterRCNNResNets.feature_stride, mode, cfg)
-		self.logger_handle = logger_handle
-		self.backbone_type = cfg.BACKBONE_TYPE
-		self.pretrained_model_path = cfg.PRETRAINED_MODEL_PATH
-		self.backbone = ResNets(resnet_type=self.backbone_type, pretrained=False)
-		if cfg.WEIGHTS_NEED_INITIALIZE and mode == 'TRAIN':
-			self.initializeBackbone()
-		self.backbone.avgpool = None
-		self.backbone.fc = None
+		fasterRCNNFPNBase.__init__(self, cfg.NUM_CLASSES, cfg.IS_CLASS_AGNOSTIC, FasterRCNNFPNResNets.rpn_feature_strides, rcnn_feature_strides, mode, cfg)
 		# base model
-		self.base_model = nn.Sequential(*[self.backbone.conv1,
-										  self.backbone.bn1,
-										  self.backbone.relu,
-										  self.backbone.maxpool,
-										  self.backbone.layer1,
-										  self.backbone.layer2,
-										  self.backbone.layer3])
+		self.base_model = FPNResNets(mode=mode, cfg=cfg, logger_handle=logger_handle)
 		# RPN
-		self.rpn_net = RegionProposalNet(in_channels=1024, feature_stride=self.feature_stride, mode=mode, cfg=cfg)
+		self.rpn_net = RegionProposalNet(in_channels=256, feature_strides=self.rpn_feature_strides, mode=mode, cfg=cfg)
 		self.roi_crop = RoICrop()
 		pooling_size = cfg.TRAIN_POOLING_SIZE if mode == 'TRAIN' else cfg.TEST_POOLING_SIZE
 		self.roi_align = RoIAlignAvg(pooling_size, pooling_size, 1.0/self.feature_stride)
 		self.roi_pooling = RoIPooling(pooling_size, pooling_size, 1.0/self.feature_stride)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
 		# define top model
-		self.top_model = nn.Sequential(*[self.backbone.layer4])
+		self.top_model = nn.Sequential(nn.Conv2d(256, 1024, kernel_size=pooling_size, stride=1, padding=0),
+									   nn.ReLU(inplace=True),
+									   nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+									   nn.ReLU(inplace=True))
 		# final results
-		self.fc_cls = nn.Linear(2048, self.num_classes)
+		self.fc_cls = nn.Linear(1024, self.num_classes)
 		if self.is_class_agnostic:
-			self.fc_loc = nn.Linear(2048, 4)
+			self.fc_loc = nn.Linear(1024, 4)
 		else:
-			self.fc_loc = nn.Linear(2048, 4*self.num_classes)
+			self.fc_loc = nn.Linear(1024, 4*self.num_classes)
 		if cfg.WEIGHTS_NEED_INITIALIZE and mode == 'TRAIN':
 			self.initializeAddedModules()
 		# fix some first layers following original implementation
 		if cfg.FIXED_FRONT_BLOCKS:
-			for p in self.base_model[0].parameters():
+			for p in self.base_model.base_layer0.parameters():
 				p.requires_grad = False
-			for p in self.base_model[1].parameters():
+			for p in self.base_model.base_layer1.parameters():
 				p.requires_grad = False
-			for p in self.base_model[4].parameters():
-				p.requires_grad = False
-		self.base_model.apply(fasterRCNNBase.setBnFixed)
-		self.top_model.apply(fasterRCNNBase.setBnFixed)
+		self.base_model.apply(fasterRCNNFPNBase.setBnFixed)
+		self.top_model.apply(fasterRCNNFPNBase.setBnFixed)
 	'''set train mode'''
 	def setTrain(self):
 		nn.Module.train(self, True)
 		if self.cfg.FIXED_FRONT_BLOCKS:
 			self.base_model.eval()
-			self.base_model[5].train()
-			self.base_model[6].train()
-		self.base_model.apply(fasterRCNNBase.setBnEval)
-		self.top_model.apply(fasterRCNNBase.setBnEval)
-	'''initialize model'''
-	def initializeBackbone(self):
-		if self.pretrained_model_path:
-			self.backbone.load_state_dict({k:v for k,v in torch.load(self.pretrained_model_path).items() if k in self.backbone.state_dict()})
-			self.logger_handle.info('Loading pretrained weights from %s for backbone network...' % self.pretrained_model_path)
-		else:
-			self.backbone_type = ResNets(resnet_type=self.backbone_type, pretrained=True)
+			self.base_model.base_layer2.train()
+			self.base_model.base_layer3.train()
+			self.base_model.base_layer4.train()
+			self.base_model.lateral_layer0.train()
+			self.base_model.lateral_layer1.train()
+			self.base_model.lateral_layer2.train()
+			self.base_model.lateral_layer3.train()
+			self.base_model.smooth_layer1.train()
+			self.base_model.smooth_layer2.train()
+			self.base_model.smooth_layer3.train()
+		self.base_model.apply(fasterRCNNFPNBase.setBnEval)
+		self.top_model.apply(fasterRCNNFPNBase.setBnEval)

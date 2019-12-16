@@ -5,12 +5,29 @@ Author:
 	Charles
 '''
 import torch
+import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
-from modules.backbones import *
 
 
-'''FPNResNets'''
+'''resnet from torchvision==0.2.2'''
+def ResNets(resnet_type, pretrained=False):
+	if resnet_type == 'resnet18':
+		model = torchvision.models.resnet18(pretrained=pretrained)
+	elif resnet_type == 'resnet34':
+		model = torchvision.models.resnet34(pretrained=pretrained)
+	elif resnet_type == 'resnet50':
+		model = torchvision.models.resnet50(pretrained=pretrained)
+	elif resnet_type == 'resnet101':
+		model = torchvision.models.resnet101(pretrained=pretrained)
+	elif resnet_type == 'resnet152':
+		model = torchvision.models.resnet152(pretrained=pretrained)
+	else:
+		raise ValueError('Unsupport resnet_type <%s>...' % resnet_type)
+	return model
+
+
+'''FPN by using ResNets'''
 class FPNResNets(nn.Module):
 	def __init__(self, mode, cfg, logger_handle, **kwargs):
 		super(FPNResNets, self).__init__()
@@ -37,7 +54,7 @@ class FPNResNets(nn.Module):
 		self.smooth_layer2 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		self.smooth_layer3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		# add downsample layer
-		self.downsample_layer = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)
+		self.downsample_layer = nn.MaxPool2d(kernel_size=1, stride=2)
 	'''forward'''
 	def forward(self, x):
 		# bottom-up
@@ -67,4 +84,4 @@ class FPNResNets(nn.Module):
 			self.backbone.load_state_dict({k:v for k,v in torch.load(self.pretrained_model_path).items() if k in self.backbone.state_dict()})
 			self.logger_handle.info('Loading pretrained weights from %s for backbone network...' % self.pretrained_model_path)
 		else:
-			self.backbone_type = ResNets(resnet_type=self.backbone_type, pretrained=True)
+			self.backbone = ResNets(resnet_type=self.backbone_type, pretrained=True)

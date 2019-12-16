@@ -17,21 +17,23 @@ from modules.losses.smoothL1 import smoothL1Loss, betaSmoothL1Loss
 Function:
 	define the proposal layer for rpn
 Init Input:
-	--feature_stride: stride now.
-	--anchors: A x 4
+	--feature_strides: strides now.
+	--anchor_scales: scales for anchor boxes
+	--anchor_ratios: ratios for anchor boxes
 	--mode: flag about TRAIN or TEST.
 	--cfg: config file.
 Forward Input:
-	--x_cls_pred: N x 2 x H x W
-	--x_loc_pred: N x 4 x H x W
+	--x_cls_pred/probs: (N, H*W, 2)
+	--x_loc_pred: (N, H*W, 4)
+	--rpn_features_shapes: a list for recording shapes of feature maps in each pyramid level
 	--img_info: (height, width, scale_factor)
 '''
 class rpnProposalLayer(nn.Module):
-	def __init__(self, feature_stride, anchor_scales, anchor_ratios, mode, cfg, **kwargs):
+	def __init__(self, feature_strides, anchor_scales, anchor_ratios, mode, cfg, **kwargs):
 		super(rpnProposalLayer, self).__init__()
-		self.feature_stride = feature_stride
-		self.anchors = RegionProposalNet.generateAnchors(scales=anchor_scales, ratios=anchor_ratios)
-		self.num_anchors = self.anchors.size(0)
+		self.feature_strides = feature_strides
+		self.anchor_scales = anchor_scales
+		self.anchor_ratios = anchor_ratios
 		if mode == 'TRAIN':
 			self.pre_nms_topN = cfg.TRAIN_RPN_PRE_NMS_TOP_N
 			self.post_nms_topN = cfg.TRAIN_RPN_POST_NMS_TOP_N
@@ -44,28 +46,17 @@ class rpnProposalLayer(nn.Module):
 			raise ValueError('Unkown mode <%s> in rpnProposalLayer...' % mode)
 	def forward(self, x):
 		# prepare
-		probs, x_loc_pred, img_info = x
+		probs, x_loc_pred, rpn_features_shapes, img_info = x
 		batch_size = probs.size(0)
-		feature_height, feature_width = probs.size(2), probs.size(3)
 		# get bg and fg probs
-		bg_probs = probs[:, :self.num_anchors, :, :]
-		fg_probs = probs[:, self.num_anchors:, :, :]
-		# get shift
-		shift_x = np.arange(0, feature_width) * self.feature_stride
-		shift_y = np.arange(0, feature_height) * self.feature_stride
-		shift_x, shift_y = np.meshgrid(shift_x, shift_y)
-		shifts = torch.from_numpy(np.vstack((shift_x.ravel(), shift_y.ravel(), shift_x.ravel(), shift_y.ravel())).transpose())
-		shifts = shifts.contiguous().type_as(fg_probs).float()
+		bg_probs = probs[:, 0]
+		fg_probs = probs[:, 1]
 		# get anchors
-		anchors = self.anchors.type_as(fg_probs)
-		anchors = anchors.view(1, self.num_anchors, 4) + shifts.view(shifts.size(0), 1, 4)
-		anchors = anchors.view(1, self.num_anchors*shifts.size(0), 4).expand(batch_size, self.num_anchors*shifts.size(0), 4)
+		anchors = RegionProposalNet.generateAnchors(scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shapes=rpn_features_shapes, feature_strides=self.feature_strides).type_as(fg_probs)
+		num_anchors = anchors.size(0)
+		anchors = anchors.view(1, num_anchors, 4).expand(batch_size, num_anchors, 4)
 		# format x_loc_pred
-		bbox_deltas = x_loc_pred.permute(0, 2, 3, 1).contiguous()
-		bbox_deltas = bbox_deltas.view(batch_size, -1, 4)
-		# format fg_probs
-		fg_probs = fg_probs.permute(0, 2, 3, 1).contiguous()
-		fg_probs = fg_probs.view(batch_size, -1)
+		bbox_deltas = x_loc_pred
 		# convert anchors to proposals
 		proposals = BBoxFunctions.anchors2Proposals(anchors, bbox_deltas)
 		# clip predicted boxes to image
@@ -98,10 +89,11 @@ class rpnProposalLayer(nn.Module):
 
 '''build target layer for rpn'''
 class rpnBuildTargetLayer(nn.Module):
-	def __init__(self, feature_stride, anchor_scales, anchor_ratios, mode, cfg, **kwargs):
+	def __init__(self, feature_strides, anchor_scales, anchor_ratios, mode, cfg, **kwargs):
 		super(rpnBuildTargetLayer, self).__init__()
-		self.feature_stride = feature_stride
-		self.anchors = RegionProposalNet.generateAnchors(scales=anchor_scales, ratios=anchor_ratios)
+		self.feature_strides = feature_strides
+		self.anchor_scales = anchor_scales
+		self.anchor_ratios = anchor_ratios
 		if mode == 'TRAIN':
 			self.rpn_negative_overlap = cfg.TRAIN_RPN_NEGATIVE_OVERLAP
 			self.rpn_positive_overlap = cfg.TRAIN_RPN_POSITIVE_OVERLAP
@@ -114,24 +106,14 @@ class rpnBuildTargetLayer(nn.Module):
 			self.rpn_batch_size = cfg.TEST_RPN_BATCHSIZE
 		else:
 			raise ValueError('Unkown mode <%s> in rpnBuildTargetLayer...' % mode)
-		self.num_anchors = self.anchors.size(0)
 		self.allowed_border = 0
 		self.bbox_inside_weights = 1.
 	def forward(self, x):
 		# prepare
-		x_cls_pred, gt_boxes, img_info, num_gt_boxes = x
+		x_cls_pred, gt_boxes, rpn_features_shapes, img_info, num_gt_boxes = x
 		batch_size = gt_boxes.size(0)
-		feature_height, feature_width = x_cls_pred.size(2), x_cls_pred.size(3)
-		# get shift
-		shift_x = np.arange(0, feature_width) * self.feature_stride
-		shift_y = np.arange(0, feature_height) * self.feature_stride
-		shift_x, shift_y = np.meshgrid(shift_x, shift_y)
-		shifts = torch.from_numpy(np.vstack((shift_x.ravel(), shift_y.ravel(), shift_x.ravel(), shift_y.ravel())).transpose())
-		shifts = shifts.contiguous().type_as(x_cls_pred).float()
 		# get anchors
-		anchors = self.anchors.type_as(gt_boxes)
-		anchors = anchors.view(1, self.num_anchors, 4) + shifts.view(shifts.size(0), 1, 4)
-		anchors = anchors.view(self.num_anchors*shifts.size(0), 4)
+		anchors = RegionProposalNet.generateAnchors(scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shapes=rpn_features_shapes, feature_strides=self.feature_strides).type_as(x_cls_pred)
 		total_anchors_ori = anchors.size(0)
 		# make sure anchors are in the image
 		keep_idxs = ((anchors[:, 0] >= -self.allowed_border) &
@@ -183,19 +165,8 @@ class rpnBuildTargetLayer(nn.Module):
 		bbox_targets = rpnBuildTargetLayer.unmap(bbox_targets, total_anchors_ori, keep_idxs, batch_size, fill=0)
 		bbox_inside_weights = rpnBuildTargetLayer.unmap(bbox_inside_weights, total_anchors_ori, keep_idxs, batch_size, fill=0)
 		bbox_outside_weights = rpnBuildTargetLayer.unmap(bbox_outside_weights, total_anchors_ori, keep_idxs, batch_size, fill=0)
-		# format return values
-		outputs = []
-		labels = labels.view(batch_size, feature_height, feature_width, self.num_anchors).permute(0, 3, 1, 2).contiguous()
-		labels = labels.view(batch_size, 1, self.num_anchors*feature_height, feature_width)
-		outputs.append(labels)
-		bbox_targets = bbox_targets.view(batch_size, feature_height, feature_width, self.num_anchors*4).permute(0, 3, 1, 2).contiguous()
-		outputs.append(bbox_targets)
-		bbox_inside_weights = bbox_inside_weights.view(batch_size, total_anchors_ori, 1).expand(batch_size, total_anchors_ori, 4)
-		bbox_inside_weights = bbox_inside_weights.contiguous().view(batch_size, feature_height, feature_width, 4*self.num_anchors).permute(0, 3, 1, 2).contiguous()
-		outputs.append(bbox_inside_weights)
-		bbox_outside_weights = bbox_outside_weights.view(batch_size, total_anchors_ori, 1).expand(batch_size, total_anchors_ori, 4)
-		bbox_outside_weights = bbox_outside_weights.contiguous().view(batch_size, feature_height, feature_width, 4*self.num_anchors).permute(0, 3, 1, 2).contiguous()
-		outputs.append(bbox_outside_weights)
+		# pack return values into outputs
+		outputs = [labels, bbox_targets, bbox_inside_weights, bbox_outside_weights]
 		return outputs
 	@staticmethod
 	def unmap(data, count, inds, batch_size, fill=0):
@@ -212,49 +183,63 @@ class rpnBuildTargetLayer(nn.Module):
 
 '''region proposal net'''
 class RegionProposalNet(nn.Module):
-	def __init__(self, in_channels, feature_stride, mode, cfg, **kwargs):
+	def __init__(self, in_channels, feature_strides, mode, cfg, **kwargs):
 		super(RegionProposalNet, self).__init__()
 		# prepare
 		self.anchor_scales = cfg.ANCHOR_SCALES
 		self.anchor_ratios = cfg.ANCHOR_RATIOS
-		self.feature_stride = feature_stride
+		self.feature_strides = feature_strides
 		self.in_channels = in_channels
 		self.mode = mode
 		self.cfg = cfg
 		# define rpn conv
 		self.rpn_conv_trans = nn.Sequential(nn.Conv2d(in_channels=in_channels, out_channels=512, kernel_size=3, stride=1, padding=1, bias=True),
 											nn.ReLU(inplace=True))
-		self.out_channels_cls = len(self.anchor_scales) * len(self.anchor_ratios) * 2
-		self.out_channels_loc = len(self.anchor_scales) * len(self.anchor_ratios) * 4
+		self.out_channels_cls = 1 * len(self.anchor_ratios) * 2
+		self.out_channels_loc = 1 * len(self.anchor_ratios) * 4
 		self.rpn_conv_cls = nn.Conv2d(in_channels=512, out_channels=self.out_channels_cls, kernel_size=1, stride=1, padding=0)
 		self.rpn_conv_loc = nn.Conv2d(in_channels=512, out_channels=self.out_channels_loc, kernel_size=1, stride=1, padding=0)
 		# proposal layer
-		self.rpn_proposal_layer = rpnProposalLayer(feature_stride=self.feature_stride, anchor_scales=self.anchor_scales, anchor_ratios=self.anchor_ratios, mode=self.mode, cfg=self.cfg)
+		self.rpn_proposal_layer = rpnProposalLayer(feature_strides=self.feature_strides, anchor_scales=self.anchor_scales, anchor_ratios=self.anchor_ratios, mode=self.mode, cfg=self.cfg)
 		# build target layer
-		self.rpn_build_target_layer = rpnBuildTargetLayer(feature_stride=self.feature_stride, anchor_scales=self.anchor_scales, anchor_ratios=self.anchor_ratios, mode=self.mode, cfg=self.cfg)
-	def forward(self, x, gt_boxes, img_info, num_gt_boxes):
-		batch_size = x.size(0)
-		# do base classifiction and location
-		x = self.rpn_conv_trans(x)
-		x_cls = self.rpn_conv_cls(x)
-		x_loc = self.rpn_conv_loc(x)
-		# do softmax to get probs
-		x_cls_reshape = x_cls.view(x_cls.size(0), 2, -1, x_cls.size(3))
-		probs = F.softmax(x_cls_reshape, 1)
-		probs = probs.view(x_cls.size())
+		self.rpn_build_target_layer = rpnBuildTargetLayer(feature_strides=self.feature_strides, anchor_scales=self.anchor_scales, anchor_ratios=self.anchor_ratios, mode=self.mode, cfg=self.cfg)
+	def forward(self, rpn_features, gt_boxes, img_info, num_gt_boxes):
+		batch_size = rpn_features[0].size(0)
+		# get all predict results
+		rpn_features_shapes = []
+		x_cls_list = []
+		x_loc_list = []
+		probs_list = []
+		for i in range(len(rpn_features)):
+			rpn_features_shapes.append([rpn_features.size(2), rpn_features.size(3)])
+			x = rpn_features[i]
+			# --do base classifiction and location
+			x = self.rpn_conv_trans(x)
+			x_cls = self.rpn_conv_cls(x)
+			x_loc = self.rpn_conv_loc(x)
+			# --do softmax to get probs
+			x_cls_reshape = x_cls.view(x_cls.size(0), 2, -1, x_cls.size(3))
+			probs = F.softmax(x_cls_reshape, 1)
+			probs = probs.view(x_cls.size())
+			# --format results
+			x_cls_list.append(x_cls.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2))
+			probs_list.append(probs.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2))
+			x_loc_list.append(x_loc.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 4))
+		x_cls_all = torch.cat(x_cls_list, 1)
+		probs_all = torch.cat(probs_list, 1)
+		x_loc_all = torch.cat(x_loc_list, 1)
 		# get RoIs
-		rois = self.rpn_proposal_layer((probs.data, x_loc.data, img_info))
+		rois = self.rpn_proposal_layer((probs_all.data, x_loc_all.data, rpn_features_shapes, img_info))
 		# define loss
 		rpn_cls_loss = torch.Tensor([0]).type_as(x)
 		rpn_loc_loss = torch.Tensor([0]).type_as(x)
 		# while training, calculate loss
 		if self.mode == 'TRAIN' and gt_boxes is not None:
-			targets = self.rpn_build_target_layer((x_cls.data, gt_boxes, img_info, num_gt_boxes))
+			targets = self.rpn_build_target_layer((x_cls_all.data, gt_boxes, rpn_features_shapes, img_info, num_gt_boxes))
 			# --classification loss
-			cls_scores_pred = x_cls_reshape.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2)
 			labels = targets[0].view(batch_size, -1)
 			keep_idxs = labels.view(-1).ne(-1).nonzero().view(-1)
-			cls_scores_pred_keep = torch.index_select(cls_scores_pred.view(-1, 2), 0, keep_idxs.data)
+			cls_scores_pred_keep = torch.index_select(x_cls_all.view(-1, 2), 0, keep_idxs.data)
 			labels_keep = torch.index_select(labels.view(-1), 0, keep_idxs.data)
 			labels_keep = labels_keep.long()
 			if self.cfg.RPN_CLS_LOSS_SET['type'] == 'cross_entropy':
@@ -264,11 +249,13 @@ class RegionProposalNet(nn.Module):
 				raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RPN_CLS_LOSS_SET['type'])
 			# --regression loss
 			bbox_targets, bbox_inside_weights, bbox_outside_weights = targets[1:]
+			bbox_inside_weights = bbox_inside_weights.unsqueeze(2).expand(batch_size, bbox_inside_weights.size(1), 4)
+			bbox_outside_weights = bbox_outside_weights.unsqueeze(2).expand(batch_size, bbox_outside_weights.size(1), 4)
 			if self.cfg.RPN_REG_LOSS_SET['type'] == 'smoothL1Loss':
-				rpn_loc_loss = smoothL1Loss(x_loc, bbox_targets, bbox_inside_weights, bbox_outside_weights, sigma=3, dim=[1, 2, 3])
+				rpn_loc_loss = smoothL1Loss(x_loc_all, bbox_targets, bbox_inside_weights, bbox_outside_weights, sigma=3)
 				rpn_loc_loss = rpn_loc_loss * self.cfg.RPN_REG_LOSS_SET['smoothL1Loss']['weight']
 			elif self.cfg.RPN_REG_LOSS_SET['type'] == 'betaSmoothL1Loss':
-				rpn_loc_loss = betaSmoothL1Loss(x_loc[bbox_inside_weights>0].view(-1, 4), bbox_targets[bbox_inside_weights>0].view(-1, 4), beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'])
+				rpn_loc_loss = betaSmoothL1Loss(x_loc_all[bbox_inside_weights>0].view(-1, 4), bbox_targets[bbox_inside_weights>0].view(-1, 4), beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'])
 				rpn_loc_loss = rpn_loc_loss * self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight']
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
@@ -278,41 +265,30 @@ class RegionProposalNet(nn.Module):
 		generate anchors.
 	Input:
 		--base_size(int): the base anchor size (16 in faster RCNN).
-		--scales(list): scales for anchor boxes.
+		--scales(list): scales for each pyramid level.
 		--ratios(list): ratios for anchor boxes.
+		--feature_shapes(list): the size of feature maps in each pyramid level.
+		--feature_strides(list): the strides in each pyramid level.
 	Return:
 		--anchors(np.array): [nA, 4], the format is (x1, y1, x2, y2).
 	'''
 	@staticmethod
-	def generateAnchors(size_base=16, scales=2**np.arange(3, 6), ratios=[0.5, 1, 2]):
-		def getWHCxCy(anchor):
-			w = anchor[2] - anchor[0] + 1
-			h = anchor[3] - anchor[1] + 1
-			cx = anchor[0] + 0.5 * (w - 1)
-			cy = anchor[1] + 0.5 * (h - 1)
-			return w, h, cx, cy
-		def makeAnchors(ws, hs, cx, cy):
-			ws = ws[:, np.newaxis]
-			hs = hs[:, np.newaxis]
-			anchors = np.hstack((cx - 0.5 * (ws - 1),
-								 cy - 0.5 * (hs - 1),
-								 cx + 0.5 * (ws - 1),
-								 cy + 0.5 * (hs - 1)))
-			return anchors
-		scales = np.array(scales)
-		ratios = np.array(ratios)
-		anchor_base = np.array([1, 1, size_base, size_base]) - 1
-		w, h, cx, cy = getWHCxCy(anchor_base)
-		size = w * h
-		size_ratios = size / ratios
-		ws = np.round(np.sqrt(size_ratios))
-		hs = np.round(ws * ratios)
-		anchors = makeAnchors(ws, hs, cx, cy)
-		tmp = list()
-		for i in range(anchors.shape[0]):
-			w, h, cx, cy = getWHCxCy(anchors[i, :])
-			ws = w * scales
-			hs = h * scales
-			tmp.append(makeAnchors(ws, hs, cx, cy))
-		anchors = np.vstack(tmp)
+	def generateAnchors(size_base=16, scales=2**np.arange(1, 6), ratios=[0.5, 1, 2], feature_shapes=list(), feature_strides=list()):
+		assert (len(scales) == len(feature_shapes)) and (len(feature_shapes) == len(feature_strides)), 'for <scales> <ratios> <feature_shapes> and <feature_strides>, expect same length.'
+		anchors = []
+		for i in range(len(scales)):
+			scales_pyramid, ratios_pyramid = np.meshgrid(np.array(scales[i]*size_base), np.array(ratios))
+			scales_pyramid, ratios_pyramid = scales_pyramid.flatten(), ratios_pyramid.flatten()
+			heights = scales_pyramid / np.sqrt(ratios_pyramid)
+			widths = scales_pyramid * np.sqrt(ratios_pyramid)
+			shifts_x = np.arange(0, feature_shapes[i][1], 1) * feature_strides[i]
+			shifts_y = np.arange(0, feature_shapes[i][0], 1) * feature_strides[i]
+			shifts_x, shifts_y = np.meshgrid(shifts_x, shifts_y)
+			widths, cxs = np.meshgrid(widths, shifts_x)
+			heights, cys = np.meshgrid(heights, shifts_y)
+			boxes_cxcy = np.stack([cxs, cys], axis=2).reshape([-1, 2])
+			boxes_whs = np.stack([widths, heights], axis=2).reshape([-1, 2])
+			anchors_pyramid = np.concatenate([boxes_cxcy-0.5*boxes_whs, boxes_cxcy+0.5*boxes_whs], axis=1)
+			anchors.append(anchors_pyramid)
+		anchors = np.concatenate(anchors, axis=0)
 		return torch.from_numpy(anchors).float()
