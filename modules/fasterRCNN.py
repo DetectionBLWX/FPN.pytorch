@@ -194,7 +194,7 @@ class fasterRCNNFPNBase(nn.Module):
 			for i, level in enumerate(range(2, 6)):
 				if (roi_levels == level).sum() < 1.:
 					continue
-				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
+				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
 				boxes_levels.append(keep_idxs_level)
 				grid_size = self.pooling_size * 2
 				grid_xy = fasterRCNNFPNBase.affineGridGen(rois[keep_idxs_level].view(-1, 5), rcnn_features[i].size()[2:], grid_size, self.rcnn_feature_strides[i])
@@ -209,7 +209,7 @@ class fasterRCNNFPNBase(nn.Module):
 			for i, level in enumerate(range(2, 6)):
 				if (roi_levels == level).sum() < 1.:
 					continue
-				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
+				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
 				boxes_levels.append(keep_idxs_level)
 				pooled_features.append(self.roi_align(rcnn_features[i], rois[keep_idxs_level].view(-1, 5), 1./self.rcnn_feature_strides[i]))
 			pooled_features = torch.cat(pooled_features, 0)
@@ -221,7 +221,7 @@ class fasterRCNNFPNBase(nn.Module):
 			for i, level in enumerate(range(2, 6)):
 				if (roi_levels == level).sum() < 1.:
 					continue
-				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
+				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
 				boxes_levels.append(keep_idxs_level)
 				pooled_features.append(self.roi_pooling(rcnn_features[i], rois[keep_idxs_level].view(-1, 5), 1./self.rcnn_feature_strides[i]))
 			pooled_features = torch.cat(pooled_features, 0)
