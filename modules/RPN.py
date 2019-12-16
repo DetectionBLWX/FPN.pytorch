@@ -211,8 +211,8 @@ class RegionProposalNet(nn.Module):
 		x_loc_list = []
 		probs_list = []
 		for i in range(len(rpn_features)):
-			rpn_features_shapes.append([rpn_features.size(2), rpn_features.size(3)])
 			x = rpn_features[i]
+			rpn_features_shapes.append([x.size(2), x.size(3)])
 			# --do base classifiction and location
 			x = self.rpn_conv_trans(x)
 			x_cls = self.rpn_conv_cls(x)

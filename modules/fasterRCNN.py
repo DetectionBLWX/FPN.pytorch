@@ -181,6 +181,7 @@ class fasterRCNNFPNBase(nn.Module):
 			rois_bbox_inside_weights = None
 			rois_bbox_outside_weights = None
 		# roi pooling based on obtained rois
+		rois = rois.view(-1, 5)
 		rois_h = rois.data[:, 4] - rois.data[:, 2] + 1
 		rois_w = rois.data[:, 3] - rois.data[:, 1] + 1
 		roi_levels = torch.log2(torch.sqrt(rois_h * rois_w) / 224.0)
@@ -191,15 +192,14 @@ class fasterRCNNFPNBase(nn.Module):
 			pooled_features = []
 			boxes_levels = []
 			for i, level in enumerate(range(2, 6)):
-				if (roi_levels == level).sum() == 0:
+				if (roi_levels == level).sum() < 1.:
 					continue
 				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
 				boxes_levels.append(keep_idxs_level)
 				grid_size = self.pooling_size * 2
 				grid_xy = fasterRCNNFPNBase.affineGridGen(rois[keep_idxs_level].view(-1, 5), rcnn_features[i].size()[2:], grid_size, self.rcnn_feature_strides[i])
 				grid_yx = torch.stack([grid_xy.data[:, :, :, 1], grid_xy.data[:, :, :, 0]], 3)
-				pooled_features = self.roi_crop(rcnn_features[i], grid_yx.detach())
-				pooled_features.append(F.max_pool2d(pooled_features, 2, 2))
+				pooled_features.append(F.max_pool2d(self.roi_crop(rcnn_features[i], grid_yx.detach()), 2, 2))
 			pooled_features = torch.cat(pooled_features, 0)
 			boxes_levels = torch.cat(boxes_levels, 0)
 			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
@@ -207,7 +207,7 @@ class fasterRCNNFPNBase(nn.Module):
 			pooled_features = []
 			boxes_levels = []
 			for i, level in enumerate(range(2, 6)):
-				if (roi_levels == level).sum() == 0:
+				if (roi_levels == level).sum() < 1.:
 					continue
 				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
 				boxes_levels.append(keep_idxs_level)
@@ -219,7 +219,7 @@ class fasterRCNNFPNBase(nn.Module):
 			pooled_features = []
 			boxes_levels = []
 			for i, level in enumerate(range(2, 6)):
-				if (roi_levels == level).sum() == 0:
+				if (roi_levels == level).sum() < 1.:
 					continue
 				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
 				boxes_levels.append(keep_idxs_level)
@@ -261,6 +261,7 @@ class fasterRCNNFPNBase(nn.Module):
 				loss_loc = loss_loc * self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['weight']
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RCNN_REG_LOSS_SET['type'])
+		rois = rois.view(batch_size, -1, rois.size(1))
 		cls_probs = cls_probs.view(batch_size, rois.size(1), -1)
 		bbox_preds = x_loc.view(batch_size, rois.size(1), -1)
 		return rois, cls_probs, bbox_preds, rpn_cls_loss, rpn_loc_loss, loss_cls, loss_loc
@@ -323,7 +324,7 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 	rpn_feature_strides = [4, 8, 16, 32, 64]
 	rcnn_feature_strides = [4, 8, 16, 32]
 	def __init__(self, mode, cfg, logger_handle, **kwargs):
-		fasterRCNNFPNBase.__init__(self, cfg.NUM_CLASSES, cfg.IS_CLASS_AGNOSTIC, FasterRCNNFPNResNets.rpn_feature_strides, rcnn_feature_strides, mode, cfg)
+		fasterRCNNFPNBase.__init__(self, cfg.NUM_CLASSES, cfg.IS_CLASS_AGNOSTIC, FasterRCNNFPNResNets.rpn_feature_strides, FasterRCNNFPNResNets.rcnn_feature_strides, mode, cfg)
 		# base model
 		self.base_model = FPNResNets(mode=mode, cfg=cfg, logger_handle=logger_handle)
 		# RPN
