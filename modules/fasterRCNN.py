@@ -130,11 +130,12 @@ class buildProposalTargetLayer(nn.Module):
 
 '''base model for faster rcnn'''
 class fasterRCNNFPNBase(nn.Module):
-	def __init__(self, num_classes, is_class_agnostic, feature_stride, mode, cfg, **kwargs):
+	def __init__(self, num_classes, is_class_agnostic, rpn_feature_strides, rcnn_feature_strides, mode, cfg, **kwargs):
 		super(fasterRCNNFPNBase, self).__init__()
 		self.num_classes = num_classes
 		self.is_class_agnostic = is_class_agnostic
-		self.feature_stride = feature_stride
+		self.rpn_feature_strides = rpn_feature_strides
+		self.rcnn_feature_strides = rcnn_feature_strides
 		self.mode = mode
 		self.cfg = cfg
 		if self.mode == 'TRAIN':
@@ -180,16 +181,52 @@ class fasterRCNNFPNBase(nn.Module):
 			rois_bbox_inside_weights = None
 			rois_bbox_outside_weights = None
 		# roi pooling based on obtained rois
+		rois_h = rois.data[:, 4] - rois.data[:, 2] + 1
+		rois_w = rois.data[:, 3] - rois.data[:, 1] + 1
+		roi_levels = torch.log2(torch.sqrt(rois_h * rois_w) / 224.0)
+		roi_levels = torch.round(roi_levels + 4)
+		roi_levels[roi_levels < 2] = 2
+		roi_levels[roi_levels > 5] = 5
 		if self.pooling_method == 'crop':
-			grid_size = self.pooling_size * 2
-			grid_xy = fasterRCNNFPNBase.affineGridGen(rois.view(-1, 5), x.size()[2:], grid_size, self.feature_stride)
-			grid_yx = torch.stack([grid_xy.data[:, :, :, 1], grid_xy.data[:, :, :, 0]], 3)
-			pooled_features = self.roi_crop(x, grid_yx.detach())
-			pooled_features = F.max_pool2d(pooled_features, 2, 2)
+			pooled_features = []
+			boxes_levels = []
+			for i, level in enumerate(range(2, 6)):
+				if (roi_levels == level).sum() == 0:
+					continue
+				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
+				boxes_levels.append(keep_idxs_level)
+				grid_size = self.pooling_size * 2
+				grid_xy = fasterRCNNFPNBase.affineGridGen(rois[keep_idxs_level].view(-1, 5), rcnn_features[i].size()[2:], grid_size, self.rcnn_feature_strides[i])
+				grid_yx = torch.stack([grid_xy.data[:, :, :, 1], grid_xy.data[:, :, :, 0]], 3)
+				pooled_features = self.roi_crop(rcnn_features[i], grid_yx.detach())
+				pooled_features.append(F.max_pool2d(pooled_features, 2, 2))
+			pooled_features = torch.cat(pooled_features, 0)
+			boxes_levels = torch.cat(boxes_levels, 0)
+			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
 		elif self.pooling_method == 'align':
-			pooled_features = self.roi_align(x, rois.view(-1, 5))
+			pooled_features = []
+			boxes_levels = []
+			for i, level in enumerate(range(2, 6)):
+				if (roi_levels == level).sum() == 0:
+					continue
+				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
+				boxes_levels.append(keep_idxs_level)
+				pooled_features.append(self.roi_align(rcnn_features[i], rois[keep_idxs_level].view(-1, 5), 1./self.rcnn_feature_strides[i]))
+			pooled_features = torch.cat(pooled_features, 0)
+			boxes_levels = torch.cat(boxes_levels, 0)
+			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
 		elif self.pooling_method == 'pool':
-			pooled_features = self.roi_pooling(x, rois.view(-1, 5))
+			pooled_features = []
+			boxes_levels = []
+			for i, level in enumerate(range(2, 6)):
+				if (roi_levels == level).sum() == 0:
+					continue
+				keep_idxs_level = (roi_levels == level).nonzero().squeeze()
+				boxes_levels.append(keep_idxs_level)
+				pooled_features.append(self.roi_pooling(rcnn_features[i], rois[keep_idxs_level].view(-1, 5), 1./self.rcnn_feature_strides[i]))
+			pooled_features = torch.cat(pooled_features, 0)
+			boxes_levels = torch.cat(boxes_levels, 0)
+			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
 		else:
 			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
 		# feed into top model
@@ -230,19 +267,29 @@ class fasterRCNNFPNBase(nn.Module):
 	'''initialize except for backbone network'''
 	def initializeAddedModules(self):
 		if self.cfg.USE_CAFFE_PRETRAINED_MODEL and self.cfg.RCNN_REG_LOSS_SET['type'] == 'smoothL1Loss':
-			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_trans[0], 0, 0.01, False)
-			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_cls, 0, 0.01, False)
-			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_loc, 0, 0.01, False)
-			fasterRCNNFPNBase.initWeights(self.fc_cls, 0, 0.01, False)
-			fasterRCNNFPNBase.initWeights(self.fc_loc, 0, 0.001, False)
-	'''random normal or truncated normal'''
+			fasterRCNNFPNBase.initWeights(self.base_model.lateral_layer0, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.base_model.lateral_layer1, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.base_model.lateral_layer2, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.base_model.lateral_layer3, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.base_model.smooth_layer1, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.base_model.smooth_layer2, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.base_model.smooth_layer3, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_trans, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_cls, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.rpn_net.rpn_conv_loc, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.top_model, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.fc_cls, 0, 0.01)
+			fasterRCNNFPNBase.initWeights(self.fc_loc, 0, 0.001)
+	'''random normal'''
 	@staticmethod
-	def initWeights(m, mean, stddev, truncated=False):
-		if truncated:
-			m.weight.data.normal_().fmod_(2).mul_(stddev).add_(mean)
-		else:
+	def initWeights(m, mean, stddev, bn_mean=1, bn_stddev=0.01):
+		classname = m.__class__.__name__
+		if classname.find('Conv') != -1:
 			m.weight.data.normal_(mean, stddev)
-			m.bias.data.zero_()
+			m.bias.data.fill_(0)
+		elif classname.find('BatchNorm') != -1:
+			m.weight.data.normal_(bn_mean, bn_stddev)
+			m.bias.data.fill_(0)
 	'''affine grid gen'''
 	@staticmethod
 	def affineGridGen(rois, input_size, grid_size, feature_stride=16):
@@ -273,8 +320,8 @@ class fasterRCNNFPNBase(nn.Module):
 
 '''faster rcnn using resnet-FPN backbones'''
 class FasterRCNNFPNResNets(fasterRCNNFPNBase):
-	rpn_feature_strides = [4, 8, 16, 32]
-	rcnn_feature_strides = [4, 8, 16, 32, 64]
+	rpn_feature_strides = [4, 8, 16, 32, 64]
+	rcnn_feature_strides = [4, 8, 16, 32]
 	def __init__(self, mode, cfg, logger_handle, **kwargs):
 		fasterRCNNFPNBase.__init__(self, cfg.NUM_CLASSES, cfg.IS_CLASS_AGNOSTIC, FasterRCNNFPNResNets.rpn_feature_strides, rcnn_feature_strides, mode, cfg)
 		# base model
@@ -283,8 +330,8 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		self.rpn_net = RegionProposalNet(in_channels=256, feature_strides=self.rpn_feature_strides, mode=mode, cfg=cfg)
 		self.roi_crop = RoICrop()
 		pooling_size = cfg.TRAIN_POOLING_SIZE if mode == 'TRAIN' else cfg.TEST_POOLING_SIZE
-		self.roi_align = RoIAlignAvg(pooling_size, pooling_size, 1.0/self.feature_stride)
-		self.roi_pooling = RoIPooling(pooling_size, pooling_size, 1.0/self.feature_stride)
+		self.roi_align = RoIAlignAvg(pooling_size, pooling_size)
+		self.roi_pooling = RoIPooling(pooling_size, pooling_size)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
 		# define top model
 		self.top_model = nn.Sequential(nn.Conv2d(256, 1024, kernel_size=pooling_size, stride=1, padding=0),
