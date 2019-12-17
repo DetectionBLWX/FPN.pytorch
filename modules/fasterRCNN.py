@@ -207,6 +207,7 @@ class fasterRCNNFPNBase(nn.Module):
 			pooled_features = []
 			boxes_levels = []
 			for i, level in enumerate(range(2, 6)):
+				print(i, (roi_levels == level).sum())
 				if (roi_levels == level).sum() < 1.:
 					continue
 				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
@@ -335,9 +336,7 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		self.roi_pooling = RoIPooling(pooling_size, pooling_size)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
 		# define top model
-		self.top_model = nn.Sequential(nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1),
-									   nn.ReLU(inplace=True),
-									   nn.Conv2d(256, 1024, kernel_size=pooling_size, stride=1, padding=0),
+		self.top_model = nn.Sequential(nn.Conv2d(256, 1024, kernel_size=pooling_size, stride=1, padding=0),
 									   nn.ReLU(inplace=True),
 									   nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
 									   nn.ReLU(inplace=True))
