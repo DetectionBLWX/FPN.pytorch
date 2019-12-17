@@ -207,7 +207,6 @@ class fasterRCNNFPNBase(nn.Module):
 			pooled_features = []
 			boxes_levels = []
 			for i, level in enumerate(range(2, 6)):
-				print(i, (roi_levels == level).sum())
 				if (roi_levels == level).sum() < 1.:
 					continue
 				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
