@@ -77,7 +77,7 @@ class FPNResNets(nn.Module):
 	'''upsample and add'''
 	def upsampleAdd(self, p, c):
 		_, _, H, W = c.size()
-		return F.upsample(p, size=(H, W), mode='bilinear') + c
+		return F.interpolate(p, size=(H, W), mode='bilinear') + c
 	'''initialize model'''
 	def initializeBackbone(self):
 		if self.pretrained_model_path:

@@ -5,6 +5,7 @@ Author:
 	Charles
 '''
 import torch
+import warnings
 import argparse
 import numpy as np
 from modules.utils.utils import *
@@ -13,6 +14,7 @@ from libs.nms.nms_wrapper import nms
 from PIL import Image, ImageDraw, ImageFont
 from cfgs.getcfg import getCfgByDatasetAndBackbone
 from modules.fasterRCNN import FasterRCNNFPNResNets
+warnings.filterwarnings("ignore")
 
 
 '''parse arguments for training'''
