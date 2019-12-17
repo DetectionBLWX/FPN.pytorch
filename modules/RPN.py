@@ -49,8 +49,8 @@ class rpnProposalLayer(nn.Module):
 		probs, x_loc_pred, rpn_features_shapes, img_info = x
 		batch_size = probs.size(0)
 		# get bg and fg probs
-		bg_probs = probs[:, 0]
-		fg_probs = probs[:, 1]
+		bg_probs = probs[..., 0]
+		fg_probs = probs[..., 1]
 		# get anchors
 		anchors = RegionProposalNet.generateAnchors(scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shapes=rpn_features_shapes, feature_strides=self.feature_strides).type_as(fg_probs)
 		num_anchors = anchors.size(0)
