@@ -15,13 +15,14 @@ Python: python3.x with torch==0.4.1, torchvision==0.2.2
 # Performance
 |  Backbone      | Train       |  Test         |  Pretrained Model  |  Epochs  |	Learning Rate		|    RoI per image   |   AP      					|
 |  :----:        | :----:      |  :----:       |  :----:    	    |  :----:  |	:----:				|   :----:  		 |   :----: 				    |
-| ResNet50-FPN   | trainval35k |  minival5k    |  Pytorch		    |  12	   |	2e-2/2e-3/2e-4   	|	128              |   -                          |
-| ResNet101-FPN  | trainval35k |  minival5k    |  Pytorch   	    |  12	   |	2e-2/2e-3/2e-4		|	128  			 |	 -							|
+| ResNet50-FPN   | trainval35k |  minival5k    |  Pytorch		    |  12	   |	2e-2/2e-3/2e-4   	|	512              |   -                          |
+| ResNet101-FPN  | trainval35k |  minival5k    |  Pytorch   	    |  12	   |	2e-2/2e-3/2e-4		|	512  			 |	 -							|
 
 
 # Trained models
 ```
 You could get the trained models reported above at 
+https://drive.google.com/open?id=1xm8z-EMbNG17sQzd-2FRRLVk_N7UIOhE
 ```
 
 
@@ -43,6 +44,8 @@ optional arguments:
                         backbone network for training.
   --checkpointspath CHECKPOINTSPATH
                         checkpoints you want to use.
+cmd example:
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python train.py --datasetname coco --backbonename resnet50
 ```
 #### Test
 ```
@@ -63,6 +66,8 @@ optional arguments:
                         checkpoints you want to use.
   --nmsthresh NMSTHRESH
                         thresh used in nms.
+cmd example:
+CUDA_VISIBLE_DEVICES=0 python test.py --checkpointspath faster_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50
 ```
 #### Demo
 ```
@@ -83,4 +88,6 @@ optional arguments:
                         thresh used in nms.
   --confthresh CONFTHRESH
                         thresh used in showing bounding box.
+cmd example:
+python demo.py --checkpointspath faster_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50 --imagepath 000001.jpg
 ```

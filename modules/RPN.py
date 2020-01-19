@@ -264,7 +264,7 @@ class RegionProposalNet(nn.Module):
 	Function:
 		generate anchors.
 	Input:
-		--base_size(int): the base anchor size (16 in faster RCNN).
+		--base_size(int): the base anchor size (8 in FPN).
 		--scales(list): scales for each pyramid level.
 		--ratios(list): ratios for anchor boxes.
 		--feature_shapes(list): the size of feature maps in each pyramid level.
@@ -273,7 +273,7 @@ class RegionProposalNet(nn.Module):
 		--anchors(np.array): [nA, 4], the format is (x1, y1, x2, y2).
 	'''
 	@staticmethod
-	def generateAnchors(size_base=16, scales=2**np.arange(1, 6), ratios=[0.5, 1, 2], feature_shapes=list(), feature_strides=list()):
+	def generateAnchors(size_base=8, scales=2**np.arange(2, 7), ratios=[0.5, 1, 2], feature_shapes=list(), feature_strides=list()):
 		assert (len(scales) == len(feature_shapes)) and (len(feature_shapes) == len(feature_strides)), 'for <scales> <ratios> <feature_shapes> and <feature_strides>, expect same length.'
 		anchors = []
 		for i in range(len(scales)):
