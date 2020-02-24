@@ -67,7 +67,7 @@ optional arguments:
   --nmsthresh NMSTHRESH
                         thresh used in nms.
 cmd example:
-CUDA_VISIBLE_DEVICES=0 python test.py --checkpointspath faster_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50
+CUDA_VISIBLE_DEVICES=0 python test.py --checkpointspath fpn_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50
 ```
 #### Demo
 ```
@@ -89,5 +89,5 @@ optional arguments:
   --confthresh CONFTHRESH
                         thresh used in showing bounding box.
 cmd example:
-python demo.py --checkpointspath faster_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50 --imagepath 000001.jpg
+python demo.py --checkpointspath fpn_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50 --imagepath 000001.jpg
 ```
