@@ -45,10 +45,11 @@ class FPNResNets(nn.Module):
 		self.base_layer3 = nn.Sequential(self.backbone.layer3)
 		self.base_layer4 = nn.Sequential(self.backbone.layer4)
 		# add lateral layers
-		self.lateral_layer0 = nn.Conv2d(in_channels=2048, out_channels=256, kernel_size=1, stride=1, padding=0)
-		self.lateral_layer1 = nn.Conv2d(in_channels=1024, out_channels=256, kernel_size=1, stride=1, padding=0)
-		self.lateral_layer2 = nn.Conv2d(in_channels=512, out_channels=256, kernel_size=1, stride=1, padding=0)
-		self.lateral_layer3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=1, padding=0)
+		in_channels = [512, 256, 128, 64] if cfg.BACKBONE_TYPE in ['resnet18', 'resnet34'] else [2048, 1024, 512, 256]
+		self.lateral_layer0 = nn.Conv2d(in_channels=in_channels[0], out_channels=256, kernel_size=1, stride=1, padding=0)
+		self.lateral_layer1 = nn.Conv2d(in_channels=in_channels[1], out_channels=256, kernel_size=1, stride=1, padding=0)
+		self.lateral_layer2 = nn.Conv2d(in_channels=in_channels[2], out_channels=256, kernel_size=1, stride=1, padding=0)
+		self.lateral_layer3 = nn.Conv2d(in_channels=in_channels[3], out_channels=256, kernel_size=1, stride=1, padding=0)
 		# add smooth layers
 		self.smooth_layer1 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		self.smooth_layer2 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
