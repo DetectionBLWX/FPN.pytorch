@@ -281,8 +281,8 @@ class RegionProposalNet(nn.Module):
 			scales_pyramid, ratios_pyramid = scales_pyramid.flatten(), ratios_pyramid.flatten()
 			heights = scales_pyramid / np.sqrt(ratios_pyramid)
 			widths = scales_pyramid * np.sqrt(ratios_pyramid)
-			shifts_x = np.arange(0, feature_shapes[i][1], 1) * feature_strides[i]
-			shifts_y = np.arange(0, feature_shapes[i][0], 1) * feature_strides[i]
+			shifts_x = np.arange(0, feature_shapes[i][1], 1) * feature_strides[i] + 0.5 * feature_strides[i]
+			shifts_y = np.arange(0, feature_shapes[i][0], 1) * feature_strides[i] + 0.5 * feature_strides[i]
 			shifts_x, shifts_y = np.meshgrid(shifts_x, shifts_y)
 			widths, cxs = np.meshgrid(widths, shifts_x)
 			heights, cys = np.meshgrid(heights, shifts_y)

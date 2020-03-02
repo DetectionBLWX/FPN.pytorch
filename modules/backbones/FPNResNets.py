@@ -55,7 +55,7 @@ class FPNResNets(nn.Module):
 		self.smooth_layer2 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		self.smooth_layer3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		# add downsample layer
-		self.downsample_layer = nn.MaxPool2d(kernel_size=1, stride=2)
+		self.downsample_layer = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)
 	'''forward'''
 	def forward(self, x):
 		# bottom-up
