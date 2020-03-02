@@ -274,7 +274,7 @@ class RegionProposalNet(nn.Module):
 	'''
 	@staticmethod
 	def generateAnchors(size_base=8, scales=2**np.arange(2, 7), ratios=[0.5, 1, 2], feature_shapes=list(), feature_strides=list()):
-		assert (len(scales) == len(feature_shapes)) and (len(feature_shapes) == len(feature_strides)), 'for <scales> <ratios> <feature_shapes> and <feature_strides>, expect same length.'
+		assert (len(scales) == len(feature_shapes)) and (len(feature_shapes) == len(feature_strides)), 'for <scales> <feature_shapes> and <feature_strides>, expect same length.'
 		anchors = []
 		for i in range(len(scales)):
 			scales_pyramid, ratios_pyramid = np.meshgrid(np.array(scales[i]*size_base), np.array(ratios))
