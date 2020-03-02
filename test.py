@@ -17,7 +17,7 @@ from modules.fasterRCNN import FasterRCNNFPNResNets
 warnings.filterwarnings("ignore")
 
 
-'''parse arguments for training'''
+'''parse arguments for testing'''
 def parseArgs():
 	parser = argparse.ArgumentParser(description='Faster R-CNN')
 	parser.add_argument('--datasetname', dest='datasetname', help='dataset for testing.', default='', type=str, required=True)

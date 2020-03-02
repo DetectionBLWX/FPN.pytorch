@@ -17,7 +17,7 @@ from modules.fasterRCNN import FasterRCNNFPNResNets
 warnings.filterwarnings("ignore")
 
 
-'''parse arguments for training'''
+'''parse arguments for demo'''
 def parseArgs():
 	parser = argparse.ArgumentParser(description='Faster R-CNN')
 	parser.add_argument('--imagepath', dest='imagepath', help='image you want to detect.', default='', type=str, required=True)
