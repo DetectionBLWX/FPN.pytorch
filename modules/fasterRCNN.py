@@ -335,9 +335,9 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		self.roi_pooling = RoIPooling(pooling_size, pooling_size)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
 		# define top model
-		self.top_model = nn.Sequential(nn.Conv2d(256, 1024, kernel_size=pooling_size, stride=1, padding=0),
+		self.top_model = nn.Sequential(nn.Linear(256, 1024),
 									   nn.ReLU(inplace=True),
-									   nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+									   nn.Linear(1024, 1024),
 									   nn.ReLU(inplace=True))
 		# final results
 		self.fc_cls = nn.Linear(1024, self.num_classes)
