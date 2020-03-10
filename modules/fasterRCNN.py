@@ -231,7 +231,7 @@ class fasterRCNNFPNBase(nn.Module):
 			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
 		# feed into top model
 		if len(pooled_features.size()) == 4:
-			pooled_features = pooled_features.view(batch_size, -1)
+			pooled_features = pooled_features.view(pooled_features.size(1), -1)
 		pooled_features = self.top_model(pooled_features)
 		# predict location
 		x_loc = self.fc_loc(pooled_features)
