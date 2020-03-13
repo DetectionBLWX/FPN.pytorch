@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from libs.nms.nms_wrapper import nms
 from modules.utils.utils import BBoxFunctions
-from modules.losses.smoothL1 import smoothL1Loss, betaSmoothL1Loss
+from modules.losses.smoothL1 import betaSmoothL1Loss
 
 
 '''
@@ -73,7 +73,7 @@ class rpnProposalLayer(nn.Module):
 				order_single = order_single[:self.pre_nms_topN]
 			proposals_single = proposals_single[order_single, :]
 			scores_single = scores_single[order_single].view(-1, 1)
-			keep_idxs = nms(torch.cat((proposals_single, scores_single), 1), self.nms_thresh, force_cpu=False)
+			_, keep_idxs = nms(torch.cat((proposals_single, scores_single), 1), self.nms_thresh)
 			keep_idxs = keep_idxs.long().view(-1)
 			if self.post_nms_topN > 0:
 				keep_idxs = keep_idxs[:self.post_nms_topN]
@@ -107,7 +107,6 @@ class rpnBuildTargetLayer(nn.Module):
 		else:
 			raise ValueError('Unkown mode <%s> in rpnBuildTargetLayer...' % mode)
 		self.allowed_border = 0
-		self.bbox_inside_weights = 1.
 	def forward(self, x):
 		# prepare
 		x_cls_pred, gt_boxes, rpn_features_shapes, img_info, num_gt_boxes = x
@@ -124,8 +123,6 @@ class rpnBuildTargetLayer(nn.Module):
 		anchors = anchors[keep_idxs, :]
 		# prepare labels: 1 is positive, 0 is negative, -1 means ignore
 		labels = gt_boxes.new(batch_size, keep_idxs.size(0)).fill_(-1)
-		bbox_inside_weights = gt_boxes.new(batch_size, keep_idxs.size(0)).zero_()
-		bbox_outside_weights = gt_boxes.new(batch_size, keep_idxs.size(0)).zero_()
 		# calc ious
 		overlaps = BBoxFunctions.calcIoUs(anchors, gt_boxes)
 		max_overlaps, argmax_overlaps = torch.max(overlaps, 2)
@@ -156,17 +153,11 @@ class rpnBuildTargetLayer(nn.Module):
 		argmax_overlaps = argmax_overlaps + offsets.view(batch_size, 1).type_as(argmax_overlaps)
 		gt_rois = gt_boxes.view(-1, 5)[argmax_overlaps.view(-1), :].view(batch_size, -1, 5)
 		bbox_targets = BBoxFunctions.encodeBboxes(anchors, gt_rois[..., :4])
-		bbox_inside_weights[labels==1] = self.bbox_inside_weights
-		num_examples = torch.sum(labels[i] >= 0)
-		bbox_outside_weights[labels==1] = 1.0 / num_examples.item()
-		bbox_outside_weights[labels==0] = 1.0 / num_examples.item()
 		# unmap
 		labels = rpnBuildTargetLayer.unmap(labels, total_anchors_ori, keep_idxs, batch_size, fill=-1)
 		bbox_targets = rpnBuildTargetLayer.unmap(bbox_targets, total_anchors_ori, keep_idxs, batch_size, fill=0)
-		bbox_inside_weights = rpnBuildTargetLayer.unmap(bbox_inside_weights, total_anchors_ori, keep_idxs, batch_size, fill=0)
-		bbox_outside_weights = rpnBuildTargetLayer.unmap(bbox_outside_weights, total_anchors_ori, keep_idxs, batch_size, fill=0)
 		# pack return values into outputs
-		outputs = [labels, bbox_targets, bbox_inside_weights, bbox_outside_weights]
+		outputs = [labels, bbox_targets]
 		return outputs
 	@staticmethod
 	def unmap(data, count, inds, batch_size, fill=0):
@@ -248,15 +239,14 @@ class RegionProposalNet(nn.Module):
 			else:
 				raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RPN_CLS_LOSS_SET['type'])
 			# --regression loss
-			bbox_targets, bbox_inside_weights, bbox_outside_weights = targets[1:]
-			bbox_inside_weights = bbox_inside_weights.unsqueeze(2).expand(batch_size, bbox_inside_weights.size(1), 4)
-			bbox_outside_weights = bbox_outside_weights.unsqueeze(2).expand(batch_size, bbox_outside_weights.size(1), 4)
-			if self.cfg.RPN_REG_LOSS_SET['type'] == 'smoothL1Loss':
-				rpn_loc_loss = smoothL1Loss(x_loc_all, bbox_targets, bbox_inside_weights, bbox_outside_weights, sigma=3)
-				rpn_loc_loss = rpn_loc_loss * self.cfg.RPN_REG_LOSS_SET['smoothL1Loss']['weight']
-			elif self.cfg.RPN_REG_LOSS_SET['type'] == 'betaSmoothL1Loss':
-				rpn_loc_loss = betaSmoothL1Loss(x_loc_all[bbox_inside_weights>0].view(-1, 4), bbox_targets[bbox_inside_weights>0].view(-1, 4), beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'])
-				rpn_loc_loss = rpn_loc_loss * self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight']
+			bbox_targets = targets[1]
+			if self.cfg.RPN_REG_LOSS_SET['type'] == 'betaSmoothL1Loss':
+				mask = targets[0].unsqueeze(2).expand(batch_size, targets[0].size(1), 4)
+				rpn_loc_loss = betaSmoothL1Loss(x_loc_all[mask>0].view(-1, 4), 
+												bbox_targets[mask>0].view(-1, 4), 
+												beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
+												size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
+												loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'])
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
 		return rois, rpn_cls_loss, rpn_loc_loss

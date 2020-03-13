@@ -8,7 +8,7 @@ You can star this repository to keep track of the project if it's helpful for yo
 # Environment
 ```
 OS: Ubuntu 16.04
-Python: python3.x with torch==0.4.1, torchvision==0.2.2
+Python: python3.x with torch==1.2.0, torchvision==0.4.0
 ```
 
 

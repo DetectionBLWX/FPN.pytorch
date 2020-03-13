@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 
 '''parse arguments for training'''
 def parseArgs():
-	parser = argparse.ArgumentParser(description='Faster R-CNN')
+	parser = argparse.ArgumentParser(description='Faster R-CNN with FPN')
 	parser.add_argument('--datasetname', dest='datasetname', help='dataset for training.', default='', type=str, required=True)
 	parser.add_argument('--backbonename', dest='backbonename', help='backbone network for training.', default='', type=str, required=True)
 	parser.add_argument('--checkpointspath', dest='checkpointspath', help='checkpoints you want to use.', default='', type=str)
