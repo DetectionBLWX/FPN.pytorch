@@ -230,9 +230,9 @@ class fasterRCNNFPNBase(nn.Module):
 		else:
 			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
 		# feed into top model
-		if len(pooled_features.size()) == 4:
-			pooled_features = pooled_features.view(pooled_features.size(0), -1)
 		pooled_features = self.top_model(pooled_features)
+		if len(pooled_features.size()) == 4:
+			pooled_features = pooled_features.mean(3).mean(2)
 		# predict location
 		x_loc = self.fc_loc(pooled_features)
 		if self.mode == 'TRAIN' and not self.is_class_agnostic:
@@ -335,9 +335,9 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		self.roi_pooling = RoIPooling(pooling_size, pooling_size)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
 		# define top model
-		self.top_model = nn.Sequential(nn.Linear(256*pooling_size*pooling_size, 1024),
+		self.top_model = nn.Sequential(nn.Conv2d(256, 1024, kernel_size=pooling_size, stride=pooling_size, padding=0),
 									   nn.ReLU(inplace=True),
-									   nn.Linear(1024, 1024),
+									   nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
 									   nn.ReLU(inplace=True))
 		# final results
 		self.fc_cls = nn.Linear(1024, self.num_classes)
