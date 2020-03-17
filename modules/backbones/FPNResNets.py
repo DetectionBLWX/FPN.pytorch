@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-'''resnet from torchvision==0.2.2'''
+'''resnet from torchvision==0.4.0'''
 def ResNets(resnet_type, pretrained=False):
 	if resnet_type == 'resnet18':
 		model = torchvision.models.resnet18(pretrained=pretrained)
