@@ -129,7 +129,7 @@ class buildProposalTargetLayer(nn.Module):
 
 '''base model for faster rcnn'''
 class fasterRCNNFPNBase(nn.Module):
-	def __init__(self, num_classes, is_class_agnostic, rpn_feature_strides, rcnn_feature_strides, mode, cfg, **kwargs):
+	def __init__(self, rpn_feature_strides, rcnn_feature_strides, mode, cfg, **kwargs):
 		super(fasterRCNNFPNBase, self).__init__()
 		self.num_classes = cfg.NUM_CLASSES
 		self.is_class_agnostic = cfg.IS_CLASS_AGNOSTIC
