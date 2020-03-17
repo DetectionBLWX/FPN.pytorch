@@ -131,8 +131,8 @@ class buildProposalTargetLayer(nn.Module):
 class fasterRCNNFPNBase(nn.Module):
 	def __init__(self, num_classes, is_class_agnostic, rpn_feature_strides, rcnn_feature_strides, mode, cfg, **kwargs):
 		super(fasterRCNNFPNBase, self).__init__()
-		self.num_classes = num_classes
-		self.is_class_agnostic = is_class_agnostic
+		self.num_classes = cfg.NUM_CLASSES
+		self.is_class_agnostic = cfg.IS_CLASS_AGNOSTIC
 		self.rpn_feature_strides = rpn_feature_strides
 		self.rcnn_feature_strides = rcnn_feature_strides
 		self.mode = mode
@@ -141,10 +141,12 @@ class fasterRCNNFPNBase(nn.Module):
 			self.pooling_method = cfg.TRAIN_POOLING_METHOD
 			self.pooling_size = cfg.TRAIN_POOLING_SIZE
 			self.pooling_sample_num = cfg.TRAIN_POOLING_SAMPLE_NUM
+			self.roi_map_level_scale = cfg.TRAIN_ROI_MAP_LEVEL_SCALE
 		elif self.mode == 'TEST':
 			self.pooling_method = cfg.TEST_POOLING_METHOD
 			self.pooling_size = cfg.TEST_POOLING_SIZE
 			self.pooling_sample_num = cfg.TEST_POOLING_SAMPLE_NUM
+			self.roi_map_level_scale = cfg.TEST_ROI_MAP_LEVEL_SCALE
 		else:
 			raise ValueError('Unkown mode <%s> in fasterRCNNFPNBase...' % mode)
 		# base model
@@ -178,31 +180,29 @@ class fasterRCNNFPNBase(nn.Module):
 		rois = rois.view(-1, 5)
 		rois_h = rois.data[:, 4] - rois.data[:, 2] + 1
 		rois_w = rois.data[:, 3] - rois.data[:, 1] + 1
-		roi_levels = torch.log2(torch.sqrt(rois_h * rois_w) / 224.0)
-		roi_levels = torch.round(roi_levels + 4)
-		roi_levels[roi_levels < 2] = 2
-		roi_levels[roi_levels > 5] = 5
+		roi_levels = torch.log2(torch.sqrt(rois_h * rois_w) / self.roi_map_level_scale + 1e-6)
+		roi_levels = roi_levels.clamp(min=0, max=3).long()
 		if self.pooling_method == 'align':
 			pooled_features = []
 			boxes_levels = []
-			for i, level in enumerate(range(2, 6)):
+			for level in range(4):
 				if (roi_levels == level).sum() < 1.:
 					continue
 				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
 				boxes_levels.append(keep_idxs_level)
-				pooled_features.append(roi_align(rcnn_features[i], rois[keep_idxs_level].view(-1, 5), self.pooling_size, 1./self.rcnn_feature_strides[i], self.pooling_sample_num))
+				pooled_features.append(roi_align(rcnn_features[level], rois[keep_idxs_level].view(-1, 5), self.pooling_size, 1./self.rcnn_feature_strides[level], self.pooling_sample_num))
 			pooled_features = torch.cat(pooled_features, 0)
 			boxes_levels = torch.cat(boxes_levels, 0)
 			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
 		elif self.pooling_method == 'pool':
 			pooled_features = []
 			boxes_levels = []
-			for i, level in enumerate(range(2, 6)):
+			for level in range(4):
 				if (roi_levels == level).sum() < 1.:
 					continue
 				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
 				boxes_levels.append(keep_idxs_level)
-				pooled_features.append(roi_pool(rcnn_features[i], rois[keep_idxs_level].view(-1, 5), self.pooling_size, 1./self.rcnn_feature_strides[i], self.pooling_sample_num))
+				pooled_features.append(roi_pool(rcnn_features[level], rois[keep_idxs_level].view(-1, 5), self.pooling_size, 1./self.rcnn_feature_strides[level], self.pooling_sample_num))
 			pooled_features = torch.cat(pooled_features, 0)
 			boxes_levels = torch.cat(boxes_levels, 0)
 			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
@@ -278,7 +278,7 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 	rpn_feature_strides = [4, 8, 16, 32, 64]
 	rcnn_feature_strides = [4, 8, 16, 32]
 	def __init__(self, mode, cfg, logger_handle, **kwargs):
-		fasterRCNNFPNBase.__init__(self, cfg.NUM_CLASSES, cfg.IS_CLASS_AGNOSTIC, FasterRCNNFPNResNets.rpn_feature_strides, FasterRCNNFPNResNets.rcnn_feature_strides, mode, cfg)
+		fasterRCNNFPNBase.__init__(self, FasterRCNNFPNResNets.rpn_feature_strides, FasterRCNNFPNResNets.rcnn_feature_strides, mode, cfg)
 		# base model
 		self.base_model = FPNResNets(mode=mode, cfg=cfg, logger_handle=logger_handle)
 		# RPN
