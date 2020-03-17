@@ -2,6 +2,7 @@
 ```
 Pytorch Implementation of "Feature Pyramid Networks for Object Detection"
 You can star this repository to keep track of the project if it's helpful for you, thank you for your support.
+The result is still unideal, I will optimize the codes to achieve more reasonable results.
 ```
 
 
@@ -17,7 +18,6 @@ Python: python3.x with torch==1.2.0, torchvision==0.4.0
 |  :----:        | :----:      |  :----:       |  :----:    	    |  :----:  |	:----:				|   :----:  		 |   :----: 				    |
 | ResNet50-FPN   | trainval35k |  minival5k    |  Pytorch		    |  12	   |	2e-2/2e-3/2e-4   	|	512              |   34.7                       |
 | ResNet101-FPN  | trainval35k |  minival5k    |  Pytorch   	    |  12	   |	2e-2/2e-3/2e-4		|	512  			 |	 -							|
-The result is still unideal, I will optimize the codes to achieve more reasonable results.
 
 
 # Trained models
