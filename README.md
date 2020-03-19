@@ -2,7 +2,6 @@
 ```
 Pytorch Implementation of "Feature Pyramid Networks for Object Detection"
 You can star this repository to keep track of the project if it's helpful for you, thank you for your support.
-The results are still unideal, I will optimize the codes to achieve more reasonable results.
 ```
 
 
@@ -14,10 +13,10 @@ Python: python3.x with torch==1.2.0, torchvision==0.4.0
 
 
 # Performance
-|  Backbone      | Train       |  Test         |  Pretrained Model  |  Epochs  |	Learning Rate		|   RoI per image    |   AP      					|
-|  :----:        | :----:      |  :----:       |  :----:    	    |  :----:  |	:----:				|   :----:  		 |   :----: 				    |
-| Res50-FPN      | trainval35k |  minival5k    |  Pytorch		    |  12	   |	2e-2/2e-3/2e-4   	|	512              |   34.7                       |
-| Res101-FPN     | trainval35k |  minival5k    |  Pytorch   	    |  12	   |	2e-2/2e-3/2e-4		|	512  			 |	 -							|
+|  Backbone      | Train       |  Test         |  Pretrained Model  |  Epochs  |	Learning Rate		|   RoI per image    |   AP      					                                |
+|  :----:        | :----:      |  :----:       |  :----:    	    |  :----:  |	:----:				|   :----:  		 |   :----: 				                                    |
+|  Res50-FPN     | trainval35k |  minival5k    |  Pytorch		    |  12	   |	2e-2/2e-3/2e-4   	|	512              |   [35.1](PerformanceDetails/Res50FPN_pytorch_epoch12.MD)     |
+|  Res101-FPN    | trainval35k |  minival5k    |  Pytorch   	    |  12	   |	2e-2/2e-3/2e-4		|	512  			 |	 [38.5](PerformanceDetails/Res101FPN_pytorch_epoch12.MD)	|
 
 
 # Trained models
@@ -90,5 +89,5 @@ optional arguments:
   --confthresh CONFTHRESH
                         thresh used in showing bounding box.
 cmd example:
-python demo.py --checkpointspath fpn_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50 --imagepath 000001.jpg
+CUDA_VISIBLE_DEVICES=0 python demo.py --checkpointspath fpn_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50 --imagepath 000001.jpg
 ```

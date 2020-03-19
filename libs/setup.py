@@ -61,11 +61,6 @@ setup(
 										sources=['src/nms_cuda.cpp', 'src/nms_kernel.cu']
 									),
 						make_cuda_ext(
-										name='nms_cuda', 
-										module='nms',
-										sources=['src/nms_cuda.cpp', 'src/nms_kernel.cu']
-									),
-						make_cuda_ext(
 										name='roi_align_cuda',
 										module='roi_align',
 										sources=['src/roi_align_cuda.cpp', 'src/roi_align_kernel.cu']
