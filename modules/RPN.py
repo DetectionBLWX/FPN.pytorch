@@ -120,7 +120,7 @@ class rpnBuildTargetLayer(nn.Module):
 		anchors = []
 		for rpn_features_shape, anchor_size_base, feature_stride in zip(rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
 			anchors.append(RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride))
-		anchors = torch.cat(anchors, 0)
+		anchors = torch.cat(anchors, 0).type_as(gt_boxes)
 		total_anchors_ori = anchors.size(0)
 		# make sure anchors are in the image
 		keep_idxs = ((anchors[:, 0] >= -self.allowed_border) &
