@@ -158,7 +158,7 @@ class fasterRCNNFPNBase(nn.Module):
 		self.top_model = None
 		# final results
 		self.fc_cls = None
-		self.fc_loc = None
+		self.fc_reg = None
 	'''forward'''
 	def forward(self, x, gt_boxes, img_info, num_gt_boxes):
 		batch_size = x.size(0)
@@ -167,7 +167,7 @@ class fasterRCNNFPNBase(nn.Module):
 		rpn_features = [p2, p3, p4, p5, p6]
 		rcnn_features = [p2, p3, p4, p5]
 		# obtain rois
-		rois, rpn_cls_loss, rpn_loc_loss = self.rpn_net(rpn_features, gt_boxes, img_info, num_gt_boxes)
+		rois, rpn_cls_loss, rpn_reg_loss = self.rpn_net(rpn_features, gt_boxes, img_info, num_gt_boxes)
 		# if train
 		if self.mode == 'TRAIN' and gt_boxes is not None:
 			rois, rois_labels, rois_bbox_targets = self.build_proposal_target_layer(rois, gt_boxes, num_gt_boxes)
@@ -212,18 +212,18 @@ class fasterRCNNFPNBase(nn.Module):
 		if len(pooled_features.size()) == 4:
 			pooled_features = pooled_features.view(pooled_features.size(0), -1)
 		pooled_features = self.top_model(pooled_features)
-		# predict location
-		x_loc = self.fc_loc(pooled_features)
+		# do regression
+		x_reg = self.fc_reg(pooled_features)
 		if self.mode == 'TRAIN' and not self.is_class_agnostic:
-			x_loc = x_loc.view(x_loc.size(0), -1, 4)
-			x_loc = torch.gather(x_loc, 1, rois_labels.view(rois_labels.size(0), 1, 1).expand(rois_labels.size(0), 1, 4))
-			x_loc = x_loc.squeeze(1)
-		# predict classification
+			x_reg = x_reg.view(x_reg.size(0), -1, 4)
+			x_reg = torch.gather(x_reg, 1, rois_labels.view(rois_labels.size(0), 1, 1).expand(rois_labels.size(0), 1, 4))
+			x_reg = x_reg.squeeze(1)
+		# do classification
 		x_cls = self.fc_cls(pooled_features)
 		cls_probs = F.softmax(x_cls, 1)
 		# calculate loss
 		loss_cls = torch.Tensor([0]).type_as(x)
-		loss_loc = torch.Tensor([0]).type_as(x)
+		loss_reg = torch.Tensor([0]).type_as(x)
 		if self.mode == 'TRAIN':
 			# --classification loss
 			if self.cfg.RCNN_CLS_LOSS_SET['type'] == 'cross_entropy':
@@ -234,7 +234,7 @@ class fasterRCNNFPNBase(nn.Module):
 			# --regression loss
 			if self.cfg.RCNN_REG_LOSS_SET['type'] == 'betaSmoothL1Loss':
 				mask = rois_labels.unsqueeze(1).expand(rois_labels.size(0), 4)
-				loss_loc = betaSmoothL1Loss(x_loc[mask>0].view(-1, 4), 
+				loss_reg = betaSmoothL1Loss(x_reg[mask>0].view(-1, 4), 
 											rois_bbox_targets[mask>0].view(-1, 4), 
 											beta=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
 											size_average=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
@@ -243,8 +243,8 @@ class fasterRCNNFPNBase(nn.Module):
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RCNN_REG_LOSS_SET['type'])
 		rois = rois.view(batch_size, -1, rois.size(1))
 		cls_probs = cls_probs.view(batch_size, rois.size(1), -1)
-		bbox_preds = x_loc.view(batch_size, rois.size(1), -1)
-		return rois, cls_probs, bbox_preds, rpn_cls_loss, rpn_loc_loss, loss_cls, loss_loc
+		bbox_preds = x_reg.view(batch_size, rois.size(1), -1)
+		return rois, cls_probs, bbox_preds, rpn_cls_loss, rpn_reg_loss, loss_cls, loss_reg
 	'''initialize except for backbone network'''
 	def initializeAddedModules(self, init_method):
 		raise NotImplementedError('fasterRCNNFPNBase.initializeAddedModules is not implemented...')
@@ -292,9 +292,9 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		# final results
 		self.fc_cls = nn.Linear(1024, self.num_classes)
 		if self.is_class_agnostic:
-			self.fc_loc = nn.Linear(1024, 4)
+			self.fc_reg = nn.Linear(1024, 4)
 		else:
-			self.fc_loc = nn.Linear(1024, 4*self.num_classes)
+			self.fc_reg = nn.Linear(1024, 4*self.num_classes)
 		if cfg.ADDED_MODULES_WEIGHT_INIT_METHOD and mode == 'TRAIN':
 			self.initializeAddedModules(cfg.ADDED_MODULES_WEIGHT_INIT_METHOD)
 		# fix some first layers following original implementation

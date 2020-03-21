@@ -18,22 +18,21 @@ Function:
 	define the proposal layer for rpn
 Init Input:
 	--feature_strides: strides now.
-	--anchor_scales: scales for anchor boxes
-	--anchor_ratios: ratios for anchor boxes
 	--mode: flag about TRAIN or TEST.
 	--cfg: config file.
 Forward Input:
-	--x_cls_pred/probs: (N, H*W, 2)
-	--x_loc_pred: (N, H*W, 4)
+	--probs_list: [(N, H*W, 2), ...]
+	--x_reg_list: [(N, H*W, 4), ...]
 	--rpn_features_shapes: a list for recording shapes of feature maps in each pyramid level
 	--img_info: (height, width, scale_factor)
 '''
 class rpnProposalLayer(nn.Module):
-	def __init__(self, feature_strides, anchor_scales, anchor_ratios, mode, cfg, **kwargs):
+	def __init__(self, feature_strides, mode, cfg, **kwargs):
 		super(rpnProposalLayer, self).__init__()
 		self.feature_strides = feature_strides
-		self.anchor_scales = anchor_scales
-		self.anchor_ratios = anchor_ratios
+		self.anchor_scales = cfg.ANCHOR_SCALES
+		self.anchor_ratios = cfg.ANCHOR_RATIOS
+		self.anchor_size_bases = cfg.ANCHOR_SIZE_BASES
 		if mode == 'TRAIN':
 			self.pre_nms_topN = cfg.TRAIN_RPN_PRE_NMS_TOP_N
 			self.post_nms_topN = cfg.TRAIN_RPN_POST_NMS_TOP_N
@@ -45,55 +44,61 @@ class rpnProposalLayer(nn.Module):
 		else:
 			raise ValueError('Unkown mode <%s> in rpnProposalLayer...' % mode)
 	def forward(self, x):
-		# prepare
-		probs, x_loc_pred, rpn_features_shapes, img_info = x
-		batch_size = probs.size(0)
-		# get bg and fg probs
-		bg_probs = probs[..., 0]
-		fg_probs = probs[..., 1]
-		# get anchors
-		anchors = RegionProposalNet.generateAnchors(scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shapes=rpn_features_shapes, feature_strides=self.feature_strides).type_as(fg_probs)
-		num_anchors = anchors.size(0)
-		anchors = anchors.view(1, num_anchors, 4).expand(batch_size, num_anchors, 4)
-		# format x_loc_pred
-		bbox_deltas = x_loc_pred
-		# convert anchors to proposals
-		proposals = BBoxFunctions.anchors2Proposals(anchors, bbox_deltas)
-		# clip predicted boxes to image
-		proposals = BBoxFunctions.clipBoxes(proposals, img_info)
-		# do nms
-		scores = fg_probs
-		_, order = torch.sort(scores, 1, True)
-		output = scores.new(batch_size, self.post_nms_topN, 5).zero_()
-		for i in range(batch_size):
-			proposals_single = proposals[i]
-			scores_single = scores[i]
-			order_single = order[i]
-			if self.pre_nms_topN > 0 and self.pre_nms_topN < scores.numel():
-				order_single = order_single[:self.pre_nms_topN]
-			proposals_single = proposals_single[order_single, :]
-			scores_single = scores_single[order_single].view(-1, 1)
-			_, keep_idxs = nms(torch.cat((proposals_single, scores_single), 1), self.nms_thresh)
-			keep_idxs = keep_idxs.long().view(-1)
-			if self.post_nms_topN > 0:
-				keep_idxs = keep_idxs[:self.post_nms_topN]
-			proposals_single = proposals_single[keep_idxs, :]
-			scores_single = scores_single[keep_idxs, :]
-			num_proposals = proposals_single.size(0)
-			output[i, :, 0] = i
-			output[i, :num_proposals, 1:] = proposals_single
-		return output
+		# parse x
+		probs_list, x_reg_list, rpn_features_shapes, img_info = x
+		# calculate proposals in each pyramid level
+		outputs = []
+		for probs, x_reg, rpn_features_shape, anchor_size_base, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
+			# get batch size
+			batch_size = probs.size(0)
+			# get bg and fg probs
+			bg_probs = probs[..., 0]
+			fg_probs = probs[..., 1]
+			# get anchors
+			anchors = RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride).type_as(fg_probs)
+			num_anchors = anchors.size(0)
+			anchors = anchors.view(1, num_anchors, 4).expand(batch_size, num_anchors, 4)
+			# format x_reg
+			bbox_deltas = x_reg
+			# convert anchors to proposals
+			proposals = BBoxFunctions.anchors2Proposals(anchors, bbox_deltas)
+			# clip predicted boxes to image
+			proposals = BBoxFunctions.clipBoxes(proposals, img_info)
+			# do nms
+			scores = fg_probs
+			_, order = torch.sort(scores, 1, True)
+			output = scores.new(batch_size, self.post_nms_topN, 5).zero_()
+			for i in range(batch_size):
+				proposals_single = proposals[i]
+				scores_single = scores[i]
+				order_single = order[i]
+				if self.pre_nms_topN > 0 and self.pre_nms_topN < scores.numel():
+					order_single = order_single[:self.pre_nms_topN]
+				proposals_single = proposals_single[order_single, :]
+				scores_single = scores_single[order_single].view(-1, 1)
+				_, keep_idxs = nms(torch.cat((proposals_single, scores_single), 1), self.nms_thresh)
+				keep_idxs = keep_idxs.long().view(-1)
+				if self.post_nms_topN > 0:
+					keep_idxs = keep_idxs[:self.post_nms_topN]
+				proposals_single = proposals_single[keep_idxs, :]
+				scores_single = scores_single[keep_idxs, :]
+				num_proposals = proposals_single.size(0)
+				output[i, :, 0] = i
+				output[i, :num_proposals, 1:] = proposals_single
+			outputs.append(output)
+		return torch.cat(outputs, 1)
 	def backward(self, *args):
 		pass
 
 
 '''build target layer for rpn'''
 class rpnBuildTargetLayer(nn.Module):
-	def __init__(self, feature_strides, anchor_scales, anchor_ratios, mode, cfg, **kwargs):
+	def __init__(self, feature_strides, mode, cfg, **kwargs):
 		super(rpnBuildTargetLayer, self).__init__()
 		self.feature_strides = feature_strides
-		self.anchor_scales = anchor_scales
-		self.anchor_ratios = anchor_ratios
+		self.anchor_scales = cfg.ANCHOR_SCALES
+		self.anchor_ratios = cfg.ANCHOR_RATIOS
+		self.anchor_size_bases = cfg.ANCHOR_SIZE_BASES
 		if mode == 'TRAIN':
 			self.rpn_negative_overlap = cfg.TRAIN_RPN_NEGATIVE_OVERLAP
 			self.rpn_positive_overlap = cfg.TRAIN_RPN_POSITIVE_OVERLAP
@@ -108,11 +113,14 @@ class rpnBuildTargetLayer(nn.Module):
 			raise ValueError('Unkown mode <%s> in rpnBuildTargetLayer...' % mode)
 		self.allowed_border = 0
 	def forward(self, x):
-		# prepare
-		x_cls_pred, gt_boxes, rpn_features_shapes, img_info, num_gt_boxes = x
+		# parse x
+		gt_boxes, rpn_features_shapes, img_info, num_gt_boxes = x
 		batch_size = gt_boxes.size(0)
 		# get anchors
-		anchors = RegionProposalNet.generateAnchors(scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shapes=rpn_features_shapes, feature_strides=self.feature_strides).type_as(x_cls_pred)
+		anchors = []
+		for rpn_features_shape, anchor_size_base, feature_stride in zip(rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
+			anchors.append(RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride))
+		anchors = torch.cat(anchors, 0)
 		total_anchors_ori = anchors.size(0)
 		# make sure anchors are in the image
 		keep_idxs = ((anchors[:, 0] >= -self.allowed_border) &
@@ -177,37 +185,33 @@ class RegionProposalNet(nn.Module):
 	def __init__(self, in_channels, feature_strides, mode, cfg, **kwargs):
 		super(RegionProposalNet, self).__init__()
 		# prepare
-		self.anchor_scales = cfg.ANCHOR_SCALES
-		self.anchor_ratios = cfg.ANCHOR_RATIOS
-		self.feature_strides = feature_strides
-		self.in_channels = in_channels
 		self.mode = mode
 		self.cfg = cfg
 		# define rpn conv
 		self.rpn_conv_trans = nn.Sequential(nn.Conv2d(in_channels=in_channels, out_channels=512, kernel_size=3, stride=1, padding=1, bias=True),
 											nn.ReLU(inplace=True))
-		self.out_channels_cls = 1 * len(self.anchor_ratios) * 2
-		self.out_channels_loc = 1 * len(self.anchor_ratios) * 4
+		self.out_channels_cls = len(cfg.ANCHOR_SCALES) * len(cfg.ANCHOR_RATIOS) * 2
+		self.out_channels_reg = len(cfg.ANCHOR_SCALES) * len(cfg.ANCHOR_RATIOS) * 4
 		self.rpn_conv_cls = nn.Conv2d(in_channels=512, out_channels=self.out_channels_cls, kernel_size=1, stride=1, padding=0)
-		self.rpn_conv_loc = nn.Conv2d(in_channels=512, out_channels=self.out_channels_loc, kernel_size=1, stride=1, padding=0)
+		self.rpn_conv_reg = nn.Conv2d(in_channels=512, out_channels=self.out_channels_reg, kernel_size=1, stride=1, padding=0)
 		# proposal layer
-		self.rpn_proposal_layer = rpnProposalLayer(feature_strides=self.feature_strides, anchor_scales=self.anchor_scales, anchor_ratios=self.anchor_ratios, mode=self.mode, cfg=self.cfg)
+		self.rpn_proposal_layer = rpnProposalLayer(feature_strides=feature_strides, mode=mode, cfg=cfg)
 		# build target layer
-		self.rpn_build_target_layer = rpnBuildTargetLayer(feature_strides=self.feature_strides, anchor_scales=self.anchor_scales, anchor_ratios=self.anchor_ratios, mode=self.mode, cfg=self.cfg)
+		self.rpn_build_target_layer = rpnBuildTargetLayer(feature_strides=feature_strides, mode=mode, cfg=cfg)
 	def forward(self, rpn_features, gt_boxes, img_info, num_gt_boxes):
 		batch_size = rpn_features[0].size(0)
 		# get all predict results
 		rpn_features_shapes = []
 		x_cls_list = []
-		x_loc_list = []
+		x_reg_list = []
 		probs_list = []
 		for i in range(len(rpn_features)):
 			x = rpn_features[i]
 			rpn_features_shapes.append([x.size(2), x.size(3)])
-			# --do base classifiction and location
+			# --do base classifiction and regression
 			x = self.rpn_conv_trans(x)
 			x_cls = self.rpn_conv_cls(x)
-			x_loc = self.rpn_conv_loc(x)
+			x_reg = self.rpn_conv_reg(x)
 			# --do softmax to get probs
 			x_cls_reshape = x_cls.view(x_cls.size(0), 2, -1, x_cls.size(3))
 			probs = F.softmax(x_cls_reshape, 1)
@@ -215,22 +219,21 @@ class RegionProposalNet(nn.Module):
 			# --format results
 			x_cls_list.append(x_cls.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2))
 			probs_list.append(probs.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2))
-			x_loc_list.append(x_loc.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 4))
-		x_cls_all = torch.cat(x_cls_list, 1)
-		probs_all = torch.cat(probs_list, 1)
-		x_loc_all = torch.cat(x_loc_list, 1)
+			x_reg_list.append(x_reg.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 4))
+		x_cls_concat = torch.cat(x_cls_list, axis=1)
+		x_reg_concat = torch.cat(x_reg_list, axis=1)
 		# get RoIs
-		rois = self.rpn_proposal_layer((probs_all.data, x_loc_all.data, rpn_features_shapes, img_info))
+		rois = self.rpn_proposal_layer(([p.data for p in probs_list], [x_reg.data for x_reg in x_reg_list], rpn_features_shapes, img_info))
 		# define loss
 		rpn_cls_loss = torch.Tensor([0]).type_as(x)
-		rpn_loc_loss = torch.Tensor([0]).type_as(x)
+		rpn_reg_loss = torch.Tensor([0]).type_as(x)
 		# while training, calculate loss
 		if self.mode == 'TRAIN' and gt_boxes is not None:
-			targets = self.rpn_build_target_layer((x_cls_all.data, gt_boxes, rpn_features_shapes, img_info, num_gt_boxes))
+			targets = self.rpn_build_target_layer((gt_boxes, rpn_features_shapes, img_info, num_gt_boxes))
 			# --classification loss
 			labels = targets[0].view(batch_size, -1)
 			keep_idxs = labels.view(-1).ne(-1).nonzero().view(-1)
-			cls_scores_pred_keep = torch.index_select(x_cls_all.view(-1, 2), 0, keep_idxs.data)
+			cls_scores_pred_keep = torch.index_select(x_cls_concat.view(-1, 2), 0, keep_idxs.data)
 			labels_keep = torch.index_select(labels.view(-1), 0, keep_idxs.data)
 			labels_keep = labels_keep.long()
 			if self.cfg.RPN_CLS_LOSS_SET['type'] == 'cross_entropy':
@@ -242,43 +245,42 @@ class RegionProposalNet(nn.Module):
 			bbox_targets = targets[1]
 			if self.cfg.RPN_REG_LOSS_SET['type'] == 'betaSmoothL1Loss':
 				mask = targets[0].unsqueeze(2).expand(batch_size, targets[0].size(1), 4)
-				rpn_loc_loss = betaSmoothL1Loss(x_loc_all[mask>0].view(-1, 4), 
+				rpn_reg_loss = betaSmoothL1Loss(x_reg_concat[mask>0].view(-1, 4), 
 												bbox_targets[mask>0].view(-1, 4), 
 												beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
 												size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
 												loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'])
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
-		return rois, rpn_cls_loss, rpn_loc_loss
+		return rois, rpn_cls_loss, rpn_reg_loss
 	'''
 	Function:
 		generate anchors.
 	Input:
-		--base_size(int): the base anchor size (8 in FPN).
-		--scales(list): scales for each pyramid level.
+		--size_base(int): the base anchor size.
+		--scales(list): scales for anchor boxes.
 		--ratios(list): ratios for anchor boxes.
-		--feature_shapes(list): the size of feature maps in each pyramid level.
-		--feature_strides(list): the strides in each pyramid level.
+		--feature_shape(tuple): the size of feature maps in corresponding pyramid level.
+		--feature_stride(int): the feature stride in corresponding pyramid level.
 	Return:
-		--anchors(np.array): [nA, 4], the format is (x1, y1, x2, y2).
+		--anchors(torch.FloatTensor): [nA, 4], the format is (x1, y1, x2, y2).
 	'''
 	@staticmethod
-	def generateAnchors(size_base=8, scales=2**np.arange(2, 7), ratios=[0.5, 1, 2], feature_shapes=list(), feature_strides=list()):
-		assert (len(scales) == len(feature_shapes)) and (len(feature_shapes) == len(feature_strides)), 'for <scales> <feature_shapes> and <feature_strides>, expect same length.'
+	def generateAnchors(size_base, scales=[8], ratios=[0.5, 1, 2], feature_shape=None, feature_stride=None):
 		anchors = []
-		for i in range(len(scales)):
-			scales_pyramid, ratios_pyramid = np.meshgrid(np.array(scales[i]*size_base), np.array(ratios))
-			scales_pyramid, ratios_pyramid = scales_pyramid.flatten(), ratios_pyramid.flatten()
-			heights = scales_pyramid / np.sqrt(ratios_pyramid)
-			widths = scales_pyramid * np.sqrt(ratios_pyramid)
-			shifts_x = np.arange(0, feature_shapes[i][1], 1) * feature_strides[i]
-			shifts_y = np.arange(0, feature_shapes[i][0], 1) * feature_strides[i]
+		for scale in scales:
+			scales_mg, ratios_mg = np.meshgrid(np.array(scale*size_base), np.array(ratios))
+			scales_mg, ratios_mg = scales_mg.flatten(), ratios_mg.flatten()
+			heights = scales_mg / np.sqrt(ratios_mg)
+			widths = scales_mg * np.sqrt(ratios_mg)
+			shifts_x = np.arange(0, feature_shape[1], 1) * feature_stride
+			shifts_y = np.arange(0, feature_shape[0], 1) * feature_stride
 			shifts_x, shifts_y = np.meshgrid(shifts_x, shifts_y)
 			widths, cxs = np.meshgrid(widths, shifts_x)
 			heights, cys = np.meshgrid(heights, shifts_y)
 			boxes_cxcy = np.stack([cxs, cys], axis=2).reshape([-1, 2])
 			boxes_whs = np.stack([widths, heights], axis=2).reshape([-1, 2])
-			anchors_pyramid = np.concatenate([boxes_cxcy-0.5*boxes_whs, boxes_cxcy+0.5*boxes_whs], axis=1)
-			anchors.append(anchors_pyramid)
+			anchors_scale = np.concatenate([boxes_cxcy-0.5*boxes_whs, boxes_cxcy+0.5*boxes_whs], axis=1)
+			anchors.append(anchors_scale)
 		anchors = np.concatenate(anchors, axis=0)
 		return torch.from_numpy(anchors).float()
