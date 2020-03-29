@@ -46,47 +46,44 @@ class rpnProposalLayer(nn.Module):
 	def forward(self, x):
 		# parse x
 		probs_list, x_reg_list, rpn_features_shapes, img_info = x
-		# calculate proposals in each pyramid level
-		outputs = []
-		for probs, x_reg, rpn_features_shape, anchor_size_base, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
-			# get batch size
-			batch_size = probs.size(0)
-			# get bg and fg probs
-			bg_probs = probs[..., 0]
-			fg_probs = probs[..., 1]
-			# get anchors
-			anchors = RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride).type_as(fg_probs)
-			num_anchors = anchors.size(0)
-			anchors = anchors.view(1, num_anchors, 4).expand(batch_size, num_anchors, 4)
-			# format x_reg
-			bbox_deltas = x_reg
-			# convert anchors to proposals
-			proposals = BBoxFunctions.anchors2Proposals(anchors, bbox_deltas)
-			# clip predicted boxes to image
-			proposals = BBoxFunctions.clipBoxes(proposals, img_info)
-			# do nms
-			scores = fg_probs
-			_, order = torch.sort(scores, 1, True)
-			output = scores.new(batch_size, self.post_nms_topN, 5).zero_()
-			for i in range(batch_size):
-				proposals_single = proposals[i]
-				scores_single = scores[i]
-				order_single = order[i]
+		# obtain proposals
+		outputs = scores.new(batch_size, self.post_nms_topN, 5).zero_()
+		batch_size = probs_list[0].size(0)
+		for i in range(batch_size):
+			output = []
+			for probs, x_reg, rpn_features_shape, anchor_size_base, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
+				# get bg and fg probs
+				bg_probs = probs[i:i+1, :, 0]
+				fg_probs = probs[i:i+1, :, 1]
+				# get anchors
+				anchors = RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride).type_as(fg_probs)
+				num_anchors = anchors.size(0)
+				anchors = anchors.view(1, num_anchors, 4)
+				# format x_reg
+				bbox_deltas = x_reg[i:i+1, ...]
+				# convert anchors to proposals
+				proposals = BBoxFunctions.anchors2Proposals(anchors, bbox_deltas)
+				# clip predicted boxes to image
+				proposals = BBoxFunctions.clipBoxes(proposals, img_info[i:i+1, ...])
+				# do nms
+				proposals = proposals[0]
+				scores = fg_probs[0]
+				_, order = torch.sort(scores, 1, True)
 				if self.pre_nms_topN > 0 and self.pre_nms_topN < scores.numel():
-					order_single = order_single[:self.pre_nms_topN]
-				proposals_single = proposals_single[order_single, :]
-				scores_single = scores_single[order_single].view(-1, 1)
-				_, keep_idxs = nms(torch.cat((proposals_single, scores_single), 1), self.nms_thresh)
-				keep_idxs = keep_idxs.long().view(-1)
-				if self.post_nms_topN > 0:
-					keep_idxs = keep_idxs[:self.post_nms_topN]
-				proposals_single = proposals_single[keep_idxs, :]
-				scores_single = scores_single[keep_idxs, :]
-				num_proposals = proposals_single.size(0)
-				output[i, :, 0] = i
-				output[i, :num_proposals, 1:] = proposals_single
-			outputs.append(output)
-		return torch.cat(outputs, 1)
+					order = order[:self.pre_nms_topN]
+				proposals = proposals[order]
+				scores = scores[order].view(-1, 1)
+				output.append(torch.cat((proposals, scores), 1))
+			output = torch.cat(output)
+			_, keep_idxs = nms(output, self.nms_thresh)
+			keep_idxs = keep_idxs.long().view(-1)
+			if self.post_nms_topN > 0:
+				keep_idxs = keep_idxs[:self.post_nms_topN]
+			proposals = output[keep_idxs, :4]
+			num_proposals = proposals.size(0)
+			outputs[i, :, 0] = i
+			outputs[i, :num_proposals, 1:] = proposals
+		return outputs
 	def backward(self, *args):
 		pass
 
@@ -233,11 +230,11 @@ class RegionProposalNet(nn.Module):
 			# --classification loss
 			labels = targets[0].view(batch_size, -1)
 			keep_idxs = labels.view(-1).ne(-1).nonzero().view(-1)
-			cls_scores_pred_keep = torch.index_select(x_cls_concat.view(-1, 2), 0, keep_idxs.data)
+			x_cls_concat_keep = torch.index_select(x_cls_concat.view(-1, 2), 0, keep_idxs.data)
 			labels_keep = torch.index_select(labels.view(-1), 0, keep_idxs.data)
 			labels_keep = labels_keep.long()
 			if self.cfg.RPN_CLS_LOSS_SET['type'] == 'cross_entropy':
-				rpn_cls_loss = F.cross_entropy(cls_scores_pred_keep, labels_keep, size_average=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['size_average'])
+				rpn_cls_loss = F.cross_entropy(x_cls_concat_keep, labels_keep, size_average=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['size_average'])
 				rpn_cls_loss = rpn_cls_loss * self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['weight']
 			else:
 				raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RPN_CLS_LOSS_SET['type'])

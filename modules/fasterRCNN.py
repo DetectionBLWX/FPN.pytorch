@@ -181,7 +181,8 @@ class fasterRCNNFPNBase(nn.Module):
 		rois_h = rois.data[:, 4] - rois.data[:, 2] + 1
 		rois_w = rois.data[:, 3] - rois.data[:, 1] + 1
 		roi_levels = torch.log2(torch.sqrt(rois_h * rois_w) / self.roi_map_level_scale + 1e-6)
-		roi_levels = roi_levels.clamp(min=0, max=3).long()
+		roi_levels = torch.floor(roi_levels)
+		roi_levels = roi_levels.clamp(min=0, max=len(rcnn_features)-1).long()
 		if self.pooling_method == 'align':
 			pooled_features = []
 			boxes_levels = []
@@ -248,16 +249,6 @@ class fasterRCNNFPNBase(nn.Module):
 	'''initialize except for backbone network'''
 	def initializeAddedModules(self, init_method):
 		raise NotImplementedError('fasterRCNNFPNBase.initializeAddedModules is not implemented...')
-	'''random normal'''
-	@staticmethod
-	def initWeights(m, mean, stddev, bn_mean=1, bn_stddev=0.01):
-		classname = m.__class__.__name__
-		if classname.find('Conv') != -1:
-			m.weight.data.normal_(mean, stddev)
-			m.bias.data.fill_(0)
-		elif classname.find('BatchNorm') != -1:
-			m.weight.data.normal_(bn_mean, bn_stddev)
-			m.bias.data.fill_(0)
 	'''set bn fixed'''
 	@staticmethod
 	def setBnFixed(m):
