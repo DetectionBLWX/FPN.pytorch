@@ -47,8 +47,8 @@ class rpnProposalLayer(nn.Module):
 		# parse x
 		probs_list, x_reg_list, rpn_features_shapes, img_info = x
 		# obtain proposals
-		outputs = scores.new(batch_size, self.post_nms_topN, 5).zero_()
 		batch_size = probs_list[0].size(0)
+		outputs = probs_list[0].new(batch_size, self.post_nms_topN, 5).zero_()
 		for i in range(batch_size):
 			output = []
 			for probs, x_reg, rpn_features_shape, anchor_size_base, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
@@ -68,7 +68,7 @@ class rpnProposalLayer(nn.Module):
 				# do nms
 				proposals = proposals[0]
 				scores = fg_probs[0]
-				_, order = torch.sort(scores, 1, True)
+				_, order = torch.sort(scores, 0, True)
 				if self.pre_nms_topN > 0 and self.pre_nms_topN < scores.numel():
 					order = order[:self.pre_nms_topN]
 				proposals = proposals[order]
