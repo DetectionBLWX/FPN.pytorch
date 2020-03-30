@@ -53,8 +53,8 @@ class rpnProposalLayer(nn.Module):
 			output = []
 			for probs, x_reg, rpn_features_shape, anchor_size_base, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
 				# get bg and fg probs
-				bg_probs = probs[i:i+1, :, 0]
-				fg_probs = probs[i:i+1, :, 1]
+				bg_probs = probs[i, :, 0]
+				fg_probs = probs[i, :, 1]
 				# get anchors
 				anchors = RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride).type_as(fg_probs)
 				num_anchors = anchors.size(0)
@@ -67,7 +67,7 @@ class rpnProposalLayer(nn.Module):
 				proposals = BBoxFunctions.clipBoxes(proposals, img_info[i:i+1, ...])
 				# do nms
 				proposals = proposals[0]
-				scores = fg_probs[0]
+				scores = fg_probs
 				_, order = torch.sort(scores, 0, True)
 				if self.pre_nms_topN > 0 and self.pre_nms_topN < scores.numel():
 					order = order[:self.pre_nms_topN]
@@ -75,6 +75,8 @@ class rpnProposalLayer(nn.Module):
 				scores = scores[order].view(-1, 1)
 				output.append(torch.cat((proposals, scores), 1))
 			output = torch.cat(output)
+			_, order = torch.sort(output[:, 4], 0, True)
+			output = output[order]
 			_, keep_idxs = nms(output, self.nms_thresh)
 			keep_idxs = keep_idxs.long().view(-1)
 			if self.post_nms_topN > 0:
