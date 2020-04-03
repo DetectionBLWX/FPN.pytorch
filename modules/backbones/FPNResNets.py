@@ -8,6 +8,7 @@ import torch
 import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
+from modules.utils.initialization import *
 
 
 '''resnet from torchvision==0.4.0'''
@@ -79,10 +80,30 @@ class FPNResNets(nn.Module):
 	def upsampleAdd(self, p, c):
 		_, _, H, W = c.size()
 		return F.interpolate(p, size=(H, W), mode='nearest') + c
-	'''initialize model'''
+	'''initialize backbone'''
 	def initializeBackbone(self):
 		if self.pretrained_model_path:
 			self.backbone.load_state_dict({k:v for k,v in torch.load(self.pretrained_model_path).items() if k in self.backbone.state_dict()})
 			self.logger_handle.info('Loading pretrained weights from %s for backbone network...' % self.pretrained_model_path)
 		else:
 			self.backbone = ResNets(resnet_type=self.backbone_type, pretrained=True)
+	'''initialize except for backbone network'''
+	def initializeAddedModules(self, init_method='xavier'):
+		# normal init
+		if init_method == 'normal':
+			for layer in [self.lateral_layer0, self.lateral_layer1, self.lateral_layer2, self.lateral_layer3,
+						  self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
+				normalInit(layer, std=0.01)
+		# kaiming init
+		elif init_method == 'kaiming':
+			for layer in [self.lateral_layer0, self.lateral_layer1, self.lateral_layer2, self.lateral_layer3,
+						  self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
+				kaimingInit(layer, nonlinearity='relu')
+		# xavier init
+		elif init_method == 'xavier':
+			for layer in [self.lateral_layer0, self.lateral_layer1, self.lateral_layer2, self.lateral_layer3,
+						  self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
+				xavierInit(layer, distribution='uniform')
+		# unsupport
+		else:
+			raise RuntimeError('Unsupport initializeAddedModules.init_method <%s>...' % init_method)

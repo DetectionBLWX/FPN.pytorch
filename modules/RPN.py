@@ -9,6 +9,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from libs.nms.nms_wrapper import nms
+from modules.utils.initialization import *
 from modules.utils.utils import BBoxFunctions
 from modules.losses.smoothL1 import betaSmoothL1Loss
 
@@ -252,6 +253,23 @@ class RegionProposalNet(nn.Module):
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
 		return rois, rpn_cls_loss, rpn_reg_loss
+	'''initialize weights'''
+	def initWeights(self, init_method):
+		# normal init
+		if init_method == 'normal':
+			for layer in [self.rpn_conv_trans[0], self.rpn_conv_cls, self.rpn_conv_reg]:
+				normalInit(layer, std=0.01)
+		# kaiming init
+		elif init_method == 'kaiming':
+			for layer in [self.rpn_conv_trans[0], self.rpn_conv_cls, self.rpn_conv_reg]:
+				kaimingInit(layer, nonlinearity='relu')
+		# xavier
+		elif init_method == 'xavier':
+			for layer in [self.rpn_conv_trans[0], self.rpn_conv_cls, self.rpn_conv_reg]:
+				xavierInit(layer, distribution='uniform')
+		# unsupport
+		else:
+			raise RuntimeError('Unsupport initializeAddedModules.init_method <%s>...' % init_method)
 	'''
 	Function:
 		generate anchors.

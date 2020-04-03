@@ -154,8 +154,6 @@ class fasterRCNNFPNBase(nn.Module):
 		# RPN
 		self.rpn_net = None
 		self.build_proposal_target_layer = None
-		# top model
-		self.top_model = None
 		# final results
 		self.fc_cls = None
 		self.fc_reg = None
@@ -209,10 +207,9 @@ class fasterRCNNFPNBase(nn.Module):
 			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
 		else:
 			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
-		# feed into top model
+		# prepare for doing regression and classification
 		if len(pooled_features.size()) == 4:
 			pooled_features = pooled_features.view(pooled_features.size(0), -1)
-		pooled_features = self.top_model(pooled_features)
 		# do regression
 		x_reg = self.fc_reg(pooled_features)
 		if self.mode == 'TRAIN' and not self.is_class_agnostic:
@@ -248,7 +245,15 @@ class fasterRCNNFPNBase(nn.Module):
 		return rois, cls_probs, bbox_preds, rpn_cls_loss, rpn_reg_loss, loss_cls, loss_reg
 	'''initialize except for backbone network'''
 	def initializeAddedModules(self, init_method):
-		raise NotImplementedError('fasterRCNNFPNBase.initializeAddedModules is not implemented...')
+		# normal init
+		if init_method == 'normal':
+			nn.init.normal_(self.fc_cls.weight, 0, 0.01)
+			nn.init.constant_(self.fc_cls.bias, 0)
+			nn.init.normal_(self.fc_reg.weight, 0, 0.001)
+			nn.init.constant_(self.fc_reg.bias, 0)
+		# unsupport
+		else:
+			raise RuntimeError('Unsupport initializeAddedModules.init_method <%s>...' % init_method)
 	'''set bn fixed'''
 	@staticmethod
 	def setBnFixed(m):
@@ -275,19 +280,18 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		# RPN
 		self.rpn_net = RegionProposalNet(in_channels=256, feature_strides=self.rpn_feature_strides, mode=mode, cfg=cfg)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
-		# define top model
-		self.top_model = nn.Sequential(nn.Linear(256*self.pooling_size*self.pooling_size, 1024),
-									   nn.ReLU(inplace=True),
-									   nn.Linear(1024, 1024),
-									   nn.ReLU(inplace=True))
 		# final results
-		self.fc_cls = nn.Linear(1024, self.num_classes)
+		in_channels = self.pooling_size * self.pooling_size * 256
+		self.fc_cls = nn.Linear(in_channels, self.num_classes)
 		if self.is_class_agnostic:
-			self.fc_reg = nn.Linear(1024, 4)
+			self.fc_reg = nn.Linear(in_channels, 4)
 		else:
-			self.fc_reg = nn.Linear(1024, 4*self.num_classes)
+			self.fc_reg = nn.Linear(in_channels, 4*self.num_classes)
 		if cfg.ADDED_MODULES_WEIGHT_INIT_METHOD and mode == 'TRAIN':
-			self.initializeAddedModules(cfg.ADDED_MODULES_WEIGHT_INIT_METHOD)
+			init_methods = cfg.ADDED_MODULES_WEIGHT_INIT_METHOD
+			self.base_model.initializeAddedModules(init_methods['fpn'])
+			self.rpn_net.initWeights(init_methods['rpn'])
+			self.initializeAddedModules(init_methods['rcnn'])
 		# fix some first layers following original implementation
 		if cfg.FIXED_FRONT_BLOCKS:
 			for p in self.base_model.base_layer0.parameters():
@@ -295,9 +299,7 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 			for p in self.base_model.base_layer1.parameters():
 				p.requires_grad = False
 		self.base_model.apply(fasterRCNNFPNBase.setBnFixed)
-		self.top_model.apply(fasterRCNNFPNBase.setBnFixed)
 	'''set train mode'''
 	def setTrain(self):
 		nn.Module.train(self, True)
 		self.base_model.apply(fasterRCNNFPNBase.setBnEval)
-		self.top_model.apply(fasterRCNNFPNBase.setBnEval)
