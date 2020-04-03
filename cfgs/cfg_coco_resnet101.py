@@ -47,7 +47,7 @@ BACKBONE_TYPE = 'resnet101'
 PRETRAINED_MODEL_PATH = ''
 USE_CAFFE_PRETRAINED_MODEL = False
 FIXED_FRONT_BLOCKS = True
-ADDED_MODULES_WEIGHT_INIT_METHOD = {'fpn': 'xavier', 'rpn': 'normal', 'rcnn': 'normal'}
+ADDED_MODULES_WEIGHT_INIT_METHOD = {'fpn': 'normal', 'rpn': 'normal', 'rcnn': 'normal'}
 IS_MULTI_GPUS = True
 IS_CLASS_AGNOSTIC = False
 # dataset
