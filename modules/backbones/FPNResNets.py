@@ -87,8 +87,8 @@ class FPNResNets(nn.Module):
 			self.logger_handle.info('Loading pretrained weights from %s for backbone network...' % self.pretrained_model_path)
 		else:
 			self.backbone = ResNets(resnet_type=self.backbone_type, pretrained=True)
-	'''initialize except for backbone network'''
-	def initializeAddedModules(self, init_method='xavier'):
+	'''initialize add layers in fpn'''
+	def initializeAddedLayers(self, init_method='xavier'):
 		# normal init
 		if init_method == 'normal':
 			for layer in [self.lateral_layer0, self.lateral_layer1, self.lateral_layer2, self.lateral_layer3,
@@ -106,4 +106,4 @@ class FPNResNets(nn.Module):
 				xavierInit(layer, distribution='uniform')
 		# unsupport
 		else:
-			raise RuntimeError('Unsupport initializeAddedModules.init_method <%s>...' % init_method)
+			raise RuntimeError('Unsupport initializeAddedLayers.init_method <%s>...' % init_method)
