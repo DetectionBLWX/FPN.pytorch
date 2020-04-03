@@ -47,7 +47,7 @@ BACKBONE_TYPE = 'resnet18'
 PRETRAINED_MODEL_PATH = ''
 USE_CAFFE_PRETRAINED_MODEL = False
 FIXED_FRONT_BLOCKS = True
-ADDED_MODULES_WEIGHT_INIT_METHOD = {'fpn': 'normal', 'rpn': 'normal', 'rcnn': 'normal'}
+ADDED_MODULES_WEIGHT_INIT_METHOD = {'fpn': 'xavier', 'rpn': 'normal', 'rcnn': 'normal'}
 IS_MULTI_GPUS = True
 IS_CLASS_AGNOSTIC = False
 # dataset
@@ -73,6 +73,8 @@ LR_ADJUST_EPOCHS = [9, 12]
 MAX_EPOCHS = 12
 IS_USE_WARMUP = True
 NUM_WARMUP_STEPS = 500
+GRAD_CLIP_MAX_NORM = 35
+GRAD_CLIP_NORM_TYPE = 2
 # image size (max_len, min_len)
 IMAGESIZE_DICT = {'LONG_SIDE': 1333, 'SHORT_SIDE': 800}
 # record

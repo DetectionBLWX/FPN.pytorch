@@ -242,7 +242,7 @@ def loadCheckpoints(checkpointspath, logger_handle):
 
 
 '''clip gradient'''
-def clipGradients(params):
+def clipGradients(params, max_norm=35, norm_type=2):
 	params = list(filter(lambda p: p.requires_grad and p.grad is not None, params))
 	if len(params) > 0:
-		clip_grad.clip_grad_norm_(params)
+		clip_grad.clip_grad_norm_(params, max_norm=max_norm, norm_type=norm_type)
