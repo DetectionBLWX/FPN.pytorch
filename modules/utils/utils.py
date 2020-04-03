@@ -7,6 +7,7 @@ Author:
 import os
 import torch
 import logging
+from torch.nn.utils import clip_grad
 
 
 '''check the existence of dirpath'''
@@ -238,3 +239,10 @@ def loadCheckpoints(checkpointspath, logger_handle):
 	logger_handle.info('Loading checkpoints from %s...' % checkpointspath)
 	checkpoints = torch.load(checkpointspath)
 	return checkpoints
+
+
+'''clip gradient'''
+def clipGradients(params):
+	params = list(filter(lambda p: p.requires_grad and p.grad is not None, params))
+	if len(params) > 0:
+		clip_grad.clip_grad_norm_(params)
