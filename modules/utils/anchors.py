@@ -22,8 +22,8 @@ Return:
 class AnchorGenerator(object):
 	def __init__(self, size_base, scales=[8], ratios=[0.5, 1, 2], feature_shape=None, feature_stride=None, **kwargs):
 		self.size_base = size_base
-		self.scales = scales
-		self.ratios = ratios
+		self.scales = torch.Tensor(scales)
+		self.ratios = torch.Tensor(ratios)
 		self.feature_shape = feature_shape
 		self.feature_stride = feature_stride
 	'''generate anchors'''
