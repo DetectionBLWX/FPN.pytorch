@@ -8,9 +8,9 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from modules.utils import *
+from modules.losses import *
 from modules.backbones import *
-from modules.utils.utils import *
-from modules.losses.smoothL1 import *
 from modules.RPN import RegionProposalNet
 from libs.roi_pool.roi_pool import roi_pool
 from libs.roi_align.roi_align import roi_align
@@ -154,6 +154,8 @@ class fasterRCNNFPNBase(nn.Module):
 		# RPN
 		self.rpn_net = None
 		self.build_proposal_target_layer = None
+		# top model
+		self.top_model = None
 		# final results
 		self.fc_cls = None
 		self.fc_reg = None
@@ -207,9 +209,11 @@ class fasterRCNNFPNBase(nn.Module):
 			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
 		else:
 			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
-		# prepare for doing regression and classification
+		# feed to top model
+		pooled_features = self.top_model(pooled_features)
+		# prepare for doing final regression and classification
 		if len(pooled_features.size()) == 4:
-			pooled_features = pooled_features.view(pooled_features.size(0), -1)
+			pooled_features = pooled_features.mean(3).mean(2)
 		# do regression
 		x_reg = self.fc_reg(pooled_features)
 		if self.mode == 'TRAIN' and not self.is_class_agnostic:
@@ -247,10 +251,10 @@ class fasterRCNNFPNBase(nn.Module):
 	def initializeAddedLayers(self, init_method):
 		# normal init
 		if init_method == 'normal':
-			nn.init.normal_(self.fc_cls.weight, 0, 0.01)
-			nn.init.constant_(self.fc_cls.bias, 0)
-			nn.init.normal_(self.fc_reg.weight, 0, 0.001)
-			nn.init.constant_(self.fc_reg.bias, 0)
+			normalInit(self.top_model[0])
+			normalInit(self.top_model[2])
+			normalInit(self.fc_cls, 0, 0.01)
+			normalInit(self.fc_reg, 0, 0.001)
 		# unsupport
 		else:
 			raise RuntimeError('Unsupport initializeAddedLayers.init_method <%s>...' % init_method)
@@ -280,8 +284,13 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		# RPN
 		self.rpn_net = RegionProposalNet(in_channels=256, feature_strides=self.rpn_feature_strides, mode=mode, cfg=cfg)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
+		# top model
+		self.top_model = nn.Sequential(nn.Conv2d(256, 1024, kernel_size=self.pooling_size, stride=self.pooling_size, padding=0),
+									   nn.ReLU(inplace=True),
+									   nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+									   nn.ReLU(True))
 		# final results
-		in_channels = self.pooling_size * self.pooling_size * 256
+		in_channels = 1024
 		self.fc_cls = nn.Linear(in_channels, self.num_classes)
 		if self.is_class_agnostic:
 			self.fc_reg = nn.Linear(in_channels, 4)
@@ -299,7 +308,9 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 			for p in self.base_model.base_layer1.parameters():
 				p.requires_grad = False
 		self.base_model.apply(fasterRCNNFPNBase.setBnFixed)
+		self.top_model.apply(fasterRCNNFPNBase.setBnFixed)
 	'''set train mode'''
 	def setTrain(self):
 		nn.Module.train(self, True)
 		self.base_model.apply(fasterRCNNFPNBase.setBnEval)
+		self.top_model.apply(fasterRCNNFPNBase.setBnEval)

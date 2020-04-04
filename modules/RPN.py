@@ -8,10 +8,9 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from modules.utils import *
+from modules.losses import *
 from libs.nms.nms_wrapper import nms
-from modules.utils.initialization import *
-from modules.utils.utils import BBoxFunctions
-from modules.losses.smoothL1 import betaSmoothL1Loss
 
 
 '''
@@ -198,6 +197,7 @@ class RegionProposalNet(nn.Module):
 		self.rpn_proposal_layer = rpnProposalLayer(feature_strides=feature_strides, mode=mode, cfg=cfg)
 		# build target layer
 		self.rpn_build_target_layer = rpnBuildTargetLayer(feature_strides=feature_strides, mode=mode, cfg=cfg)
+	'''forward'''
 	def forward(self, rpn_features, gt_boxes, img_info, num_gt_boxes):
 		batch_size = rpn_features[0].size(0)
 		# get all predict results
