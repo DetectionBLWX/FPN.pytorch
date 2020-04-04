@@ -56,7 +56,11 @@ class rpnProposalLayer(nn.Module):
 				bg_probs = probs[i, :, 0]
 				fg_probs = probs[i, :, 1]
 				# get anchors
-				anchors = RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride).type_as(fg_probs)
+				anchors = AnchorGenerator(size_base=anchor_size_base, 
+										  scales=self.anchor_scales, 
+										  ratios=self.anchor_ratios, 
+										  feature_shape=rpn_features_shape, 
+										  feature_stride=feature_stride).generate().type_as(fg_probs)
 				num_anchors = anchors.size(0)
 				anchors = anchors.view(1, num_anchors, 4)
 				# format x_reg
@@ -118,7 +122,7 @@ class rpnBuildTargetLayer(nn.Module):
 		# get anchors
 		anchors = []
 		for rpn_features_shape, anchor_size_base, feature_stride in zip(rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
-			anchors.append(RegionProposalNet.generateAnchors(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride))
+			anchors.append(AnchorGenerator(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride).generate())
 		anchors = torch.cat(anchors, 0).type_as(gt_boxes)
 		total_anchors_ori = anchors.size(0)
 		# make sure anchors are in the image
@@ -270,34 +274,3 @@ class RegionProposalNet(nn.Module):
 		# unsupport
 		else:
 			raise RuntimeError('Unsupport initializeAddedModules.init_method <%s>...' % init_method)
-	'''
-	Function:
-		generate anchors.
-	Input:
-		--size_base(int): the base anchor size.
-		--scales(list): scales for anchor boxes.
-		--ratios(list): ratios for anchor boxes.
-		--feature_shape(tuple): the size of feature maps in corresponding pyramid level.
-		--feature_stride(int): the feature stride in corresponding pyramid level.
-	Return:
-		--anchors(torch.FloatTensor): [nA, 4], the format is (x1, y1, x2, y2).
-	'''
-	@staticmethod
-	def generateAnchors(size_base, scales=[8], ratios=[0.5, 1, 2], feature_shape=None, feature_stride=None):
-		anchors = []
-		for scale in scales:
-			scales_mg, ratios_mg = np.meshgrid(np.array(scale*size_base), np.array(ratios))
-			scales_mg, ratios_mg = scales_mg.flatten(), ratios_mg.flatten()
-			heights = scales_mg / np.sqrt(ratios_mg)
-			widths = scales_mg * np.sqrt(ratios_mg)
-			shifts_x = np.arange(0, feature_shape[1], 1) * feature_stride
-			shifts_y = np.arange(0, feature_shape[0], 1) * feature_stride
-			shifts_x, shifts_y = np.meshgrid(shifts_x, shifts_y)
-			widths, cxs = np.meshgrid(widths, shifts_x)
-			heights, cys = np.meshgrid(heights, shifts_y)
-			boxes_cxcy = np.stack([cxs, cys], axis=2).reshape([-1, 2])
-			boxes_whs = np.stack([widths, heights], axis=2).reshape([-1, 2])
-			anchors_scale = np.concatenate([boxes_cxcy-0.5*boxes_whs, boxes_cxcy+0.5*boxes_whs], axis=1)
-			anchors.append(anchors_scale)
-		anchors = np.concatenate(anchors, axis=0)
-		return torch.from_numpy(anchors).float()
