@@ -10,33 +10,35 @@ import torch
 '''
 Function:
 	anchor generator
-Input:
+Input for __init__:
 	--size_base(int): the base anchor size.
 	--scales(list): scales for anchor boxes.
 	--ratios(list): ratios for anchor boxes.
+Input for generate:
 	--feature_shape(tuple): the size of feature maps in corresponding pyramid level.
 	--feature_stride(int): the feature stride in corresponding pyramid level.
+	--device: specify cpu or cuda.
 Return:
 	--anchors(torch.FloatTensor): [nA, 4], the format is (x1, y1, x2, y2).
 '''
 class AnchorGenerator(object):
-	def __init__(self, size_base, scales=[8], ratios=[0.5, 1, 2], feature_shape=None, feature_stride=None, **kwargs):
+	def __init__(self, size_base, scales=[8], ratios=[0.5, 1, 2], **kwargs):
 		self.size_base = size_base
 		self.scales = torch.Tensor(scales)
 		self.ratios = torch.Tensor(ratios)
-		self.feature_shape = feature_shape
-		self.feature_stride = feature_stride
+		self.base_anchors = self.__generateBaseAnchors()
 	'''generate anchors'''
-	def generate(self):
-		base_anchors = self.__generateBaseAnchors()
-		feat_h, feat_w = self.feature_shape
-		shift_x = torch.arange(0, feat_w) * self.feature_stride
-		shift_y = torch.arange(0, feat_h) * self.feature_stride
+	def generate(self, feature_shape=None, feature_stride=None, device='cuda'):
+		base_anchors = self.base_anchors.to(device)
+		feat_h, feat_w = feature_shape
+		shift_x = torch.arange(0, feat_w, device=device) * feature_stride
+		shift_y = torch.arange(0, feat_h, device=device) * feature_stride
 		shift_xx, shift_yy = self.__meshgrid(shift_x, shift_y)
 		shifts = torch.stack([shift_xx, shift_yy, shift_xx, shift_yy], dim=-1)
-		all_anchors = base_anchors[None, :, :] + shifts[:, None, :]
+		shifts = shifts.type_as(base_anchors)
+		all_anchors = base_anchors[None, :, :] + shifts[:, None, :].float()
 		all_anchors = all_anchors.view(-1, 4)
-		return all_anchors.float()
+		return all_anchors
 	'''meshgrid'''
 	def __meshgrid(self, x, y):
 		xx = x.repeat(len(y))

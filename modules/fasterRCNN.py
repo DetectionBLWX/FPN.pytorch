@@ -251,8 +251,8 @@ class fasterRCNNFPNBase(nn.Module):
 	def initializeAddedLayers(self, init_method):
 		# normal init
 		if init_method == 'normal':
-			normalInit(self.top_model[0])
-			normalInit(self.top_model[2])
+			normalInit(self.top_model[0], 0, 0.01)
+			normalInit(self.top_model[2], 0, 0.01)
 			normalInit(self.fc_cls, 0, 0.01)
 			normalInit(self.fc_reg, 0, 0.001)
 		# unsupport

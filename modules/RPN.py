@@ -30,9 +30,7 @@ class rpnProposalLayer(nn.Module):
 	def __init__(self, feature_strides, mode, cfg, **kwargs):
 		super(rpnProposalLayer, self).__init__()
 		self.feature_strides = feature_strides
-		self.anchor_scales = cfg.ANCHOR_SCALES
-		self.anchor_ratios = cfg.ANCHOR_RATIOS
-		self.anchor_size_bases = cfg.ANCHOR_SIZE_BASES
+		self.anchor_generators = [AnchorGenerator(size_base=size_base, scales=cfg.ANCHOR_SCALES, ratios=cfg.ANCHOR_RATIOS) for size_base in cfg.ANCHOR_SIZE_BASES]
 		if mode == 'TRAIN':
 			self.pre_nms_topN = cfg.TRAIN_RPN_PRE_NMS_TOP_N
 			self.post_nms_topN = cfg.TRAIN_RPN_POST_NMS_TOP_N
@@ -51,16 +49,12 @@ class rpnProposalLayer(nn.Module):
 		outputs = probs_list[0].new(batch_size, self.post_nms_topN, 5).zero_()
 		for i in range(batch_size):
 			output = []
-			for probs, x_reg, rpn_features_shape, anchor_size_base, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
+			for probs, x_reg, rpn_features_shape, anchor_generator, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_generators, self.feature_strides):
 				# get bg and fg probs
 				bg_probs = probs[i, :, 0]
 				fg_probs = probs[i, :, 1]
 				# get anchors
-				anchors = AnchorGenerator(size_base=anchor_size_base, 
-										  scales=self.anchor_scales, 
-										  ratios=self.anchor_ratios, 
-										  feature_shape=rpn_features_shape, 
-										  feature_stride=feature_stride).generate().type_as(fg_probs)
+				anchors = anchor_generator.generate(feature_shape=rpn_features_shape, feature_stride=feature_stride, device=fg_probs.device).type_as(fg_probs)
 				num_anchors = anchors.size(0)
 				anchors = anchors.view(1, num_anchors, 4)
 				# format x_reg
@@ -99,9 +93,7 @@ class rpnBuildTargetLayer(nn.Module):
 	def __init__(self, feature_strides, mode, cfg, **kwargs):
 		super(rpnBuildTargetLayer, self).__init__()
 		self.feature_strides = feature_strides
-		self.anchor_scales = cfg.ANCHOR_SCALES
-		self.anchor_ratios = cfg.ANCHOR_RATIOS
-		self.anchor_size_bases = cfg.ANCHOR_SIZE_BASES
+		self.anchor_generators = [AnchorGenerator(size_base=size_base, scales=cfg.ANCHOR_SCALES, ratios=cfg.ANCHOR_RATIOS) for size_base in cfg.ANCHOR_SIZE_BASES]
 		if mode == 'TRAIN':
 			self.rpn_negative_overlap = cfg.TRAIN_RPN_NEGATIVE_OVERLAP
 			self.rpn_positive_overlap = cfg.TRAIN_RPN_POSITIVE_OVERLAP
@@ -121,8 +113,8 @@ class rpnBuildTargetLayer(nn.Module):
 		batch_size = gt_boxes.size(0)
 		# get anchors
 		anchors = []
-		for rpn_features_shape, anchor_size_base, feature_stride in zip(rpn_features_shapes, self.anchor_size_bases, self.feature_strides):
-			anchors.append(AnchorGenerator(size_base=anchor_size_base, scales=self.anchor_scales, ratios=self.anchor_ratios, feature_shape=rpn_features_shape, feature_stride=feature_stride).generate())
+		for rpn_features_shape, anchor_generator, feature_stride in zip(rpn_features_shapes, self.anchor_generators, self.feature_strides):
+			anchors.append(anchor_generator.generate(feature_shape=rpn_features_shape, feature_stride=feature_stride, device=gt_boxes.device))
 		anchors = torch.cat(anchors, 0).type_as(gt_boxes)
 		total_anchors_ori = anchors.size(0)
 		# make sure anchors are in the image
