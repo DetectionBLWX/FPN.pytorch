@@ -240,7 +240,7 @@ class fasterRCNNFPNBase(nn.Module):
 											beta=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
 											size_average=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
 											loss_weight=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['weight'],
-											avg_factor=rois_labels.size(0))
+											avg_factor=x_reg[mask>0].view(-1, 4).size(0))
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RCNN_REG_LOSS_SET['type'])
 		rois = rois.view(batch_size, -1, rois.size(1))
