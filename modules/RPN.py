@@ -245,7 +245,8 @@ class RegionProposalNet(nn.Module):
 												bbox_targets[mask>0].view(-1, 4), 
 												beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
 												size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
-												loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'])
+												loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'],
+												avg_factor=labels_keep.size(0))
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
 		return rois, rpn_cls_loss, rpn_reg_loss
