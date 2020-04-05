@@ -91,3 +91,10 @@ optional arguments:
 cmd example:
 CUDA_VISIBLE_DEVICES=0 python demo.py --checkpointspath fpn_res50_trainbackup_coco/epoch_12.pth --datasetname coco --backbonename resnet50 --imagepath 000001.jpg
 ```
+
+
+# Reference
+```
+[1]. https://github.com/jwyang/fpn.pytorch
+[2]. https://github.com/open-mmlab/mmdetection
+```
