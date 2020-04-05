@@ -285,17 +285,16 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 		self.rpn_net = RegionProposalNet(in_channels=256, feature_strides=self.rpn_feature_strides, mode=mode, cfg=cfg)
 		self.build_proposal_target_layer = buildProposalTargetLayer(mode, cfg)
 		# top model
-		self.top_model = nn.Sequential(nn.Conv2d(256, 1024, kernel_size=self.pooling_size, stride=self.pooling_size, padding=0),
+		self.top_model = nn.Sequential(nn.Linear(self.pooling_size*self.pooling_size*256, 1024),
 									   nn.ReLU(inplace=True),
-									   nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
-									   nn.ReLU(True))
+									   nn.Linear(1024, 1024),
+									   nn.ReLU(inplace=True))
 		# final results
-		in_channels = 1024
-		self.fc_cls = nn.Linear(in_channels, self.num_classes)
+		self.fc_cls = nn.Linear(1024, self.num_classes)
 		if self.is_class_agnostic:
-			self.fc_reg = nn.Linear(in_channels, 4)
+			self.fc_reg = nn.Linear(1024, 4)
 		else:
-			self.fc_reg = nn.Linear(in_channels, 4*self.num_classes)
+			self.fc_reg = nn.Linear(1024, 4*self.num_classes)
 		if cfg.ADDED_MODULES_WEIGHT_INIT_METHOD and mode == 'TRAIN':
 			init_methods = cfg.ADDED_MODULES_WEIGHT_INIT_METHOD
 			self.base_model.initializeAddedLayers(init_methods['fpn'])
