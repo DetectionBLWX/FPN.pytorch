@@ -210,10 +210,9 @@ class fasterRCNNFPNBase(nn.Module):
 		else:
 			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
 		# feed to top model
-		pooled_features = self.top_model(pooled_features)
-		# prepare for doing final regression and classification
 		if len(pooled_features.size()) == 4:
-			pooled_features = pooled_features.mean(3).mean(2)
+			pooled_features = pooled_features.view(pooled_features.size(0), -1)
+		pooled_features = self.top_model(pooled_features)
 		# do regression
 		x_reg = self.fc_reg(pooled_features)
 		if self.mode == 'TRAIN' and not self.is_class_agnostic:
