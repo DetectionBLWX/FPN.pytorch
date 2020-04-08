@@ -115,6 +115,7 @@ class rpnBuildTargetLayer(nn.Module):
 		anchors = []
 		for rpn_features_shape, anchor_generator, feature_stride in zip(rpn_features_shapes, self.anchor_generators, self.feature_strides):
 			anchors.append(anchor_generator.generate(feature_shape=rpn_features_shape, feature_stride=feature_stride, device=gt_boxes.device))
+		num_anchors_levels = [a.size(0) for a in anchors]
 		anchors = torch.cat(anchors, 0).type_as(gt_boxes)
 		total_anchors_ori = anchors.size(0)
 		# make sure anchors are in the image
@@ -159,8 +160,14 @@ class rpnBuildTargetLayer(nn.Module):
 		# unmap
 		labels = rpnBuildTargetLayer.unmap(labels, total_anchors_ori, keep_idxs, batch_size, fill=-1)
 		bbox_targets = rpnBuildTargetLayer.unmap(bbox_targets, total_anchors_ori, keep_idxs, batch_size, fill=0)
+		# map to levels
+		labels_levels, bbox_targets_levels, pointer = [], [], 0
+		for num_anchors_level in num_anchors_levels:
+			labels_levels.append(labels[:, pointer: pointer+num_anchors_level])
+			bbox_targets_levels.append(bbox_targets[:, pointer: pointer+num_anchors_level, :])
+			pointer += num_anchors_level
 		# pack return values into outputs
-		outputs = [labels, bbox_targets]
+		outputs = [labels_levels, bbox_targets_levels]
 		return outputs
 	@staticmethod
 	def unmap(data, count, inds, batch_size, fill=0):
@@ -216,8 +223,6 @@ class RegionProposalNet(nn.Module):
 			x_cls_list.append(x_cls.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2))
 			probs_list.append(probs.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2))
 			x_reg_list.append(x_reg.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 4))
-		x_cls_concat = torch.cat(x_cls_list, axis=1)
-		x_reg_concat = torch.cat(x_reg_list, axis=1)
 		# get RoIs
 		rois = self.rpn_proposal_layer(([p.data for p in probs_list], [x_reg.data for x_reg in x_reg_list], rpn_features_shapes, img_info))
 		# define loss
@@ -226,29 +231,37 @@ class RegionProposalNet(nn.Module):
 		# while training, calculate loss
 		if self.mode == 'TRAIN' and gt_boxes is not None:
 			targets = self.rpn_build_target_layer((gt_boxes, rpn_features_shapes, img_info, num_gt_boxes))
-			# --classification loss
-			labels = targets[0].view(batch_size, -1)
-			keep_idxs = labels.view(-1).ne(-1).nonzero().view(-1)
-			x_cls_concat_keep = torch.index_select(x_cls_concat.view(-1, 2), 0, keep_idxs.data)
-			labels_keep = torch.index_select(labels.view(-1), 0, keep_idxs.data)
-			labels_keep = labels_keep.long()
-			if self.cfg.RPN_CLS_LOSS_SET['type'] == 'cross_entropy':
-				rpn_cls_loss = F.cross_entropy(x_cls_concat_keep, labels_keep, size_average=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['size_average'])
-				rpn_cls_loss = rpn_cls_loss * self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['weight']
-			else:
-				raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RPN_CLS_LOSS_SET['type'])
-			# --regression loss
-			bbox_targets = targets[1]
-			if self.cfg.RPN_REG_LOSS_SET['type'] == 'betaSmoothL1Loss':
-				mask = targets[0].unsqueeze(2).expand(batch_size, targets[0].size(1), 4)
-				rpn_reg_loss = betaSmoothL1Loss(x_reg_concat[mask>0].view(-1, 4), 
-												bbox_targets[mask>0].view(-1, 4), 
-												beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
-												size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
-												loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'],
-												avg_factor=labels_keep.view(-1).size(0))
-			else:
-				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
+			labels_levels, bbox_targets_levels = targets
+			rpn_cls_loss_list, rpn_reg_loss_list, avg_factor = [], [], sum([(l > -1).sum() for l in labels_levels])
+			for labels_level, bbox_targets_level, x_cls_level, x_reg_level in zip(labels_levels, bbox_targets_levels, x_cls_list, x_reg_list):
+				# --classification loss
+				labels_level = labels_level.view(batch_size, -1)
+				keep_idxs = labels_level.view(-1).ne(-1).nonzero().view(-1)
+				x_cls_level_keep = torch.index_select(x_cls_level.view(-1, 2), 0, keep_idxs.data)
+				labels_level_keep = torch.index_select(labels_level.view(-1), 0, keep_idxs.data).long()
+				if self.cfg.RPN_CLS_LOSS_SET['type'] == 'cross_entropy':
+					rpn_cls_loss = CrossEntropyLoss(preds=x_cls_level_keep, 
+													targets=labels_level_keep, 
+													loss_weight=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['weight'],
+													size_average=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['size_average'],
+													avg_factor=avg_factor)
+					rpn_cls_loss_list.append(rpn_cls_loss)
+				else:
+					raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RPN_CLS_LOSS_SET['type'])
+				# --regression loss
+				if self.cfg.RPN_REG_LOSS_SET['type'] == 'betaSmoothL1Loss':
+					mask = labels_level.unsqueeze(2).expand(batch_size, labels_level.size(1), 4)
+					rpn_reg_loss = betaSmoothL1Loss(bbox_preds=x_reg_level[mask>0].view(-1, 4), 
+													bbox_targets=bbox_targets_level[mask>0].view(-1, 4), 
+													beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
+													size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
+													loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'],
+													avg_factor=avg_factor)
+					rpn_reg_loss_list.append(rpn_reg_loss)
+				else:
+					raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
+			rpn_cls_loss = sum(l.mean() for l in rpn_cls_loss_list)
+			rpn_reg_loss = sum(l.mean() for l in rpn_reg_loss_list)
 		return rois, rpn_cls_loss, rpn_reg_loss
 	'''initialize weights'''
 	def initWeights(self, init_method):
