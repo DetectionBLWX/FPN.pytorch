@@ -87,7 +87,7 @@ class FPNResNets(nn.Module):
 			self.logger_handle.info('Loading pretrained weights from %s for backbone network...' % self.pretrained_model_path)
 		else:
 			self.backbone = ResNets(resnet_type=self.backbone_type, pretrained=True)
-	'''initialize add layers in fpn'''
+	'''initialize added layers in fpn'''
 	def initializeAddedLayers(self, init_method='xavier'):
 		# normal init
 		if init_method == 'normal':
