@@ -233,19 +233,16 @@ class RegionProposalNet(nn.Module):
 			targets = self.rpn_build_target_layer((gt_boxes, rpn_features_shapes, img_info, num_gt_boxes))
 			labels_levels, bbox_targets_levels = targets
 			rpn_cls_loss_list, rpn_reg_loss_list, avg_factor = [], [], sum([(l > -1).sum() for l in labels_levels])
-			for labels_level, bbox_targets_level, x_cls_level, x_reg_level in zip(labels_levels, bbox_targets_levels, x_cls_list, x_reg_list):
+			for x_cls_level, x_reg_level, labels_level, bbox_targets_level in zip(x_cls_list, x_reg_list, labels_levels, bbox_targets_levels):
 				# --classification loss
-				labels_level = labels_level.view(batch_size, -1)
-				keep_idxs = labels_level.view(-1).ne(-1).nonzero().view(-1)
-				x_cls_level_keep = torch.index_select(x_cls_level.view(-1, 2), 0, keep_idxs.data)
-				labels_level_keep = torch.index_select(labels_level.view(-1), 0, keep_idxs.data).long()
 				if self.cfg.RPN_CLS_LOSS_SET['type'] == 'cross_entropy':
-					rpn_cls_loss = CrossEntropyLoss(preds=x_cls_level_keep, 
-													targets=labels_level_keep, 
-													loss_weight=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['weight'],
-													size_average=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['size_average'],
-													avg_factor=avg_factor)
-					rpn_cls_loss_list.append(rpn_cls_loss)
+					if (labels_level > -1).sum() > 0:
+						rpn_cls_loss = CrossEntropyLoss(preds=x_cls_level[labels_level>-1], 
+														targets=labels_level[labels_level>-1].long(), 
+														loss_weight=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['weight'],
+														size_average=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['size_average'],
+														avg_factor=avg_factor)
+						rpn_cls_loss_list.append(rpn_cls_loss)
 				else:
 					raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RPN_CLS_LOSS_SET['type'])
 				# --regression loss
