@@ -52,6 +52,7 @@ class FPNResNets(nn.Module):
 		self.lateral_layer2 = nn.Conv2d(in_channels=in_channels[2], out_channels=256, kernel_size=1, stride=1, padding=0)
 		self.lateral_layer3 = nn.Conv2d(in_channels=in_channels[3], out_channels=256, kernel_size=1, stride=1, padding=0)
 		# add smooth layers
+		self.smooth_layer0 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		self.smooth_layer1 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		self.smooth_layer2 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
 		self.smooth_layer3 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1)
@@ -68,10 +69,12 @@ class FPNResNets(nn.Module):
 		# top-down
 		p5 = self.lateral_layer0(c5)
 		p4 = self.upsampleAdd(p5, self.lateral_layer1(c4))
-		p4 = self.smooth_layer1(p4)
 		p3 = self.upsampleAdd(p4, self.lateral_layer2(c3))
-		p3 = self.smooth_layer2(p3)
 		p2 = self.upsampleAdd(p3, self.lateral_layer3(c2))
+		# obtain fpn features
+		p5 = self.smooth_layer0(p5)
+		p4 = self.smooth_layer1(p4)
+		p3 = self.smooth_layer2(p3)
 		p2 = self.smooth_layer3(p2)
 		p6 = self.downsample_layer(p5)
 		# return all feature pyramid levels
