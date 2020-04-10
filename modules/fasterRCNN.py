@@ -310,10 +310,13 @@ class FasterRCNNFPNResNets(fasterRCNNFPNBase):
 				p.requires_grad = False
 			for p in self.base_model.base_layer1.parameters():
 				p.requires_grad = False
-		self.base_model.apply(fasterRCNNFPNBase.setBnFixed)
-		self.top_model.apply(fasterRCNNFPNBase.setBnFixed)
 	'''set train mode'''
 	def setTrain(self):
 		nn.Module.train(self, True)
+		if self.cfg.FIXED_FRONT_BLOCKS:
+			for p in self.base_model.base_layer0.parameters():
+				p.requires_grad = False
+			for p in self.base_model.base_layer1.parameters():
+				p.requires_grad = False
 		self.base_model.apply(fasterRCNNFPNBase.setBnEval)
 		self.top_model.apply(fasterRCNNFPNBase.setBnEval)

@@ -50,20 +50,20 @@ class rpnProposalLayer(nn.Module):
 		for i in range(batch_size):
 			output = []
 			for probs, x_reg, rpn_features_shape, anchor_generator, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_generators, self.feature_strides):
-				# get bg and fg probs
+				# --get bg and fg probs
 				bg_probs = probs[i, :, 0]
 				fg_probs = probs[i, :, 1]
-				# get anchors
+				# --get anchors
 				anchors = anchor_generator.generate(feature_shape=rpn_features_shape, feature_stride=feature_stride, device=fg_probs.device).type_as(fg_probs)
 				num_anchors = anchors.size(0)
 				anchors = anchors.view(1, num_anchors, 4)
-				# format x_reg
+				# --format x_reg
 				bbox_deltas = x_reg[i:i+1, ...]
-				# convert anchors to proposals
+				# --convert anchors to proposals
 				proposals = BBoxFunctions.anchors2Proposals(anchors, bbox_deltas)
-				# clip predicted boxes to image
+				# --clip predicted boxes to image
 				proposals = BBoxFunctions.clipBoxes(proposals, img_info[i:i+1, ...])
-				# do nms
+				# --do nms
 				proposals = proposals[0]
 				scores = fg_probs
 				_, order = torch.sort(scores, 0, True)
@@ -71,18 +71,23 @@ class rpnProposalLayer(nn.Module):
 					order = order[:self.pre_nms_topN]
 				proposals = proposals[order]
 				scores = scores[order].view(-1, 1)
-				output.append(torch.cat((proposals, scores), 1))
-			output = torch.cat(output)
+				proposals = torch.cat((proposals, scores), dim=-1)
+				_, keep_idxs = nms(proposals, self.nms_thresh)
+				if self.post_nms_topN > 0:
+					keep_idxs = keep_idxs[:self.post_nms_topN]
+				proposals = proposals[keep_idxs]
+				output.append(proposals)
+			# --merge multi-level proposals
+			output = torch.cat(output, dim=0)
 			_, order = torch.sort(output[:, 4], 0, True)
+			if (output.size(0) > self.post_nms_topN) and (self.post_nms_topN > 0):
+				order = order[:self.post_nms_topN]
 			output = output[order]
-			_, keep_idxs = nms(output, self.nms_thresh)
-			keep_idxs = keep_idxs.long().view(-1)
-			if self.post_nms_topN > 0:
-				keep_idxs = keep_idxs[:self.post_nms_topN]
-			proposals = output[keep_idxs, :4]
+			proposals = output[:, :4]
 			num_proposals = proposals.size(0)
 			outputs[i, :, 0] = i
 			outputs[i, :num_proposals, 1:] = proposals
+		# return the proposal outputs
 		return outputs
 	def backward(self, *args):
 		pass
