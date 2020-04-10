@@ -95,17 +95,17 @@ class FPNResNets(nn.Module):
 		# normal init
 		if init_method == 'normal':
 			for layer in [self.lateral_layer0, self.lateral_layer1, self.lateral_layer2, self.lateral_layer3,
-						  self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
+						  self.smooth_layer0, self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
 				normalInit(layer, std=0.01)
 		# kaiming init
 		elif init_method == 'kaiming':
 			for layer in [self.lateral_layer0, self.lateral_layer1, self.lateral_layer2, self.lateral_layer3,
-						  self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
+						  self.smooth_layer0, self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
 				kaimingInit(layer, nonlinearity='relu')
 		# xavier init
 		elif init_method == 'xavier':
 			for layer in [self.lateral_layer0, self.lateral_layer1, self.lateral_layer2, self.lateral_layer3,
-						  self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
+						  self.smooth_layer0, self.smooth_layer1, self.smooth_layer2, self.smooth_layer3]:
 				xavierInit(layer, distribution='uniform')
 		# unsupport
 		else:
