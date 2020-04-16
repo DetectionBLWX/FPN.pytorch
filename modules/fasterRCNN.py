@@ -180,33 +180,23 @@ class fasterRCNNFPNBase(nn.Module):
 		rois = rois.view(-1, 5)
 		rois_h = rois.data[:, 4] - rois.data[:, 2] + 1
 		rois_w = rois.data[:, 3] - rois.data[:, 1] + 1
-		roi_levels = torch.log2(torch.sqrt(rois_h * rois_w) / self.roi_map_level_scale + 1e-6)
-		roi_levels = torch.floor(roi_levels)
-		roi_levels = roi_levels.clamp(min=0, max=len(rcnn_features)-1).long()
+		roi_target_levels = torch.log2(torch.sqrt(rois_h * rois_w) / self.roi_map_level_scale + 1e-6)
+		roi_target_levels = torch.floor(roi_target_levels)
+		roi_target_levels = roi_target_levels.clamp(min=0, max=len(rcnn_features)-1).long()
 		if self.pooling_method == 'align':
-			pooled_features = []
-			boxes_levels = []
-			for level in range(4):
-				if (roi_levels == level).sum() < 1.:
-					continue
-				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
-				boxes_levels.append(keep_idxs_level)
-				pooled_features.append(roi_align(rcnn_features[level], rois[keep_idxs_level].view(-1, 5), self.pooling_size, 1./self.rcnn_feature_strides[level], self.pooling_sample_num))
-			pooled_features = torch.cat(pooled_features, 0)
-			boxes_levels = torch.cat(boxes_levels, 0)
-			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
+			pooled_features = rcnn_features[0].new_zeros(rois.size(0), rcnn_features[0].size(1), self.pooling_size, self.pooling_size)
+			for level in range(len(rcnn_features)):
+				keep_idxs_level = (roi_target_levels == level)
+				if keep_idxs_level.any():
+					rois_level = rois[keep_idxs_level].view(-1, 5)
+					pooled_features[keep_idxs_level] = roi_align(rcnn_features[level], rois_level, self.pooling_size, 1./self.rcnn_feature_strides[level], self.pooling_sample_num)
 		elif self.pooling_method == 'pool':
-			pooled_features = []
-			boxes_levels = []
-			for level in range(4):
-				if (roi_levels == level).sum() < 1.:
-					continue
-				keep_idxs_level = (roi_levels == level).nonzero().squeeze().view(-1)
-				boxes_levels.append(keep_idxs_level)
-				pooled_features.append(roi_pool(rcnn_features[level], rois[keep_idxs_level].view(-1, 5), self.pooling_size, 1./self.rcnn_feature_strides[level], self.pooling_sample_num))
-			pooled_features = torch.cat(pooled_features, 0)
-			boxes_levels = torch.cat(boxes_levels, 0)
-			pooled_features = pooled_features[torch.sort(boxes_levels)[-1]]
+			pooled_features = rcnn_features[0].new_zeros(rois.size(0), rcnn_features[0].size(1), self.pooling_size, self.pooling_size)
+			for level in range(len(rcnn_features)):
+				keep_idxs_level = (roi_target_levels == level)
+				if keep_idxs_level.any():
+					rois_level = rois[keep_idxs_level].view(-1, 5)
+					pooled_features[keep_idxs_level] = roi_pool(rcnn_features[level], rois_level, self.pooling_size, 1./self.rcnn_feature_strides[level], self.pooling_sample_num)
 		else:
 			raise ValueError('Unkown pooling_method <%s> in fasterRCNNFPNBase...' % self.pooling_method)
 		# feed to top model
