@@ -216,14 +216,12 @@ class fasterRCNNFPNBase(nn.Module):
 		loss_cls = torch.Tensor([0]).type_as(x)
 		loss_reg = torch.Tensor([0]).type_as(x)
 		if self.mode == 'TRAIN':
-			avg_factor = rois_labels.view(-1).size(0)
 			# --classification loss
 			if self.cfg.RCNN_CLS_LOSS_SET['type'] == 'cross_entropy':
 				loss_cls = CrossEntropyLoss(preds=x_cls,
 											targets=rois_labels,
 											loss_weight=self.cfg.RCNN_CLS_LOSS_SET['cross_entropy']['weight'],
-											size_average=self.cfg.RCNN_CLS_LOSS_SET['cross_entropy']['size_average'],
-											avg_factor=avg_factor)
+											size_average=self.cfg.RCNN_CLS_LOSS_SET['cross_entropy']['size_average'])
 			else:
 				raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RCNN_CLS_LOSS_SET['type'])
 			# --regression loss
@@ -233,8 +231,7 @@ class fasterRCNNFPNBase(nn.Module):
 											bbox_targets=rois_bbox_targets[mask>0].view(-1, 4), 
 											beta=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
 											size_average=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
-											loss_weight=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['weight'],
-											avg_factor=avg_factor)
+											loss_weight=self.cfg.RCNN_REG_LOSS_SET['betaSmoothL1Loss']['weight'])
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RCNN_REG_LOSS_SET['type'])
 		rois = rois.view(batch_size, -1, rois.size(1))

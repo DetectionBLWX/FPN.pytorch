@@ -50,8 +50,9 @@ class rpnProposalLayer(nn.Module):
 		for i in range(batch_size):
 			output = []
 			for probs, x_reg, rpn_features_shape, anchor_generator, feature_stride in zip(probs_list, x_reg_list, rpn_features_shapes, self.anchor_generators, self.feature_strides):
-				# --get fg probs
-				fg_probs = probs[i, :, 0]
+				# --get bg and fg probs
+				bg_probs = probs[i, :, 0]
+				fg_probs = probs[i, :, 1]
 				# --get anchors
 				anchors = anchor_generator.generate(feature_shape=rpn_features_shape, feature_stride=feature_stride, device=fg_probs.device).type_as(fg_probs)
 				num_anchors = anchors.size(0)
@@ -189,7 +190,7 @@ class RegionProposalNet(nn.Module):
 		# define rpn conv
 		self.rpn_conv_trans = nn.Sequential(nn.Conv2d(in_channels=in_channels, out_channels=512, kernel_size=3, stride=1, padding=1, bias=True),
 											nn.ReLU(inplace=True))
-		self.out_channels_cls = len(cfg.ANCHOR_SCALES) * len(cfg.ANCHOR_RATIOS) * 1
+		self.out_channels_cls = len(cfg.ANCHOR_SCALES) * len(cfg.ANCHOR_RATIOS) * 2
 		self.out_channels_reg = len(cfg.ANCHOR_SCALES) * len(cfg.ANCHOR_RATIOS) * 4
 		self.rpn_conv_cls = nn.Conv2d(in_channels=512, out_channels=self.out_channels_cls, kernel_size=1, stride=1, padding=0)
 		self.rpn_conv_reg = nn.Conv2d(in_channels=512, out_channels=self.out_channels_reg, kernel_size=1, stride=1, padding=0)
@@ -213,9 +214,9 @@ class RegionProposalNet(nn.Module):
 			x_cls = self.rpn_conv_cls(x)
 			x_reg = self.rpn_conv_reg(x)
 			# --format results
-			x_cls = x_cls.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 1)
+			x_cls = x_cls.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 2)
 			x_reg = x_reg.permute(0, 2, 3, 1).contiguous().view(batch_size, -1, 4)
-			probs = x_cls.sigmoid()
+			probs = x_cls.softmax(-1)
 			# --append
 			x_cls_list.append(x_cls)
 			x_reg_list.append(x_reg)
@@ -231,15 +232,13 @@ class RegionProposalNet(nn.Module):
 		if self.mode == 'TRAIN' and gt_boxes is not None:
 			targets = self.rpn_build_target_layer((gt_boxes, rpn_features_shapes, img_info, num_gt_boxes))
 			labels, bbox_targets = targets
-			avg_factor = (labels > -1).sum()
 			# --classification loss
-			if self.cfg.RPN_CLS_LOSS_SET['type'] == 'binary_cross_entropy':
+			if self.cfg.RPN_CLS_LOSS_SET['type'] == 'cross_entropy':
 				mask = (labels > 0)
-				rpn_cls_loss = BinaryCrossEntropyLoss(preds=x_cls[mask].view(-1, 1), 
-													  targets=labels[mask].view(-1, 1), 
-													  loss_weight=self.cfg.RPN_CLS_LOSS_SET['binary_cross_entropy']['weight'],
-													  size_average=self.cfg.RPN_CLS_LOSS_SET['binary_cross_entropy']['size_average'],
-													  avg_factor=avg_factor)
+				rpn_cls_loss = CrossEntropyLoss(preds=x_cls[mask], 
+												targets=labels[mask].long(), 
+												loss_weight=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['weight'],
+												size_average=self.cfg.RPN_CLS_LOSS_SET['cross_entropy']['size_average'])
 			else:
 				raise ValueError('Unkown classification loss type <%s>...' % self.cfg.RPN_CLS_LOSS_SET['type'])
 			# --regression loss
@@ -249,8 +248,7 @@ class RegionProposalNet(nn.Module):
 												bbox_targets=bbox_targets[mask].view(-1, 4), 
 												beta=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['beta'], 
 												size_average=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['size_average'],
-												loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'],
-												avg_factor=avg_factor)
+												loss_weight=self.cfg.RPN_REG_LOSS_SET['betaSmoothL1Loss']['weight'])
 			else:
 				raise ValueError('Unkown regression loss type <%s>...' % self.cfg.RPN_REG_LOSS_SET['type'])
 		return rois, rpn_cls_loss, rpn_reg_loss

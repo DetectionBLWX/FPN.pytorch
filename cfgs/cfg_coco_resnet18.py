@@ -47,7 +47,7 @@ BACKBONE_TYPE = 'resnet18'
 PRETRAINED_MODEL_PATH = ''
 USE_CAFFE_PRETRAINED_MODEL = False
 FIXED_FRONT_BLOCKS = True
-ADDED_MODULES_WEIGHT_INIT_METHOD = {'fpn': 'xavier', 'rpn': 'normal', 'rcnn': 'normal'}
+ADDED_MODULES_WEIGHT_INIT_METHOD = None
 IS_MULTI_GPUS = True
 IS_CLASS_AGNOSTIC = False
 # dataset
@@ -61,7 +61,7 @@ CLSNAMESPATH = 'names/coco.names'
 USE_COLOR_JITTER = False
 IMAGE_NORMALIZE_INFO = {'caffe': {'mean_rgb': (0.4814576470588235, 0.4546921568627451, 0.40384352941176466), 'std_rgb': (1., 1., 1.)}, 'pytorch': {'mean_rgb': (0.485, 0.456, 0.406), 'std_rgb': (0.229, 0.224, 0.225)}}
 # loss function
-RPN_CLS_LOSS_SET = {'type': ['binary_cross_entropy'][0], 'binary_cross_entropy': {'size_average': True, 'weight': 1.}}
+RPN_CLS_LOSS_SET = {'type': ['cross_entropy'][0], 'cross_entropy': {'size_average': True, 'weight': 1.}}
 RCNN_CLS_LOSS_SET = {'type': ['cross_entropy'][0], 'cross_entropy': {'size_average': True, 'weight': 1.}}
 RPN_REG_LOSS_SET = {'type': ['betaSmoothL1Loss'][0], 'betaSmoothL1Loss': {'beta': 1./9., 'size_average': True, 'weight': 1.}}
 RCNN_REG_LOSS_SET = {'type': ['betaSmoothL1Loss'][0], 'betaSmoothL1Loss': {'beta': 1., 'size_average': True, 'weight': 1.}}
