@@ -241,8 +241,8 @@ class RegionProposalNet(nn.Module):
 				# --classification loss
 				if self.cfg.RPN_CLS_LOSS_SET['type'] == 'binary_cross_entropy':
 					if (labels_level > -1).sum() > 0:
-						rpn_cls_loss_lvl = BinaryCrossEntropyLoss(preds=x_cls_level[labels_level>-1], 
-																  targets=labels_level[labels_level>-1].long(), 
+						rpn_cls_loss_lvl = BinaryCrossEntropyLoss(preds=x_cls_level[labels_level>-1].view(-1, 1), 
+																  targets=labels_level[labels_level>-1]..view(-1, 1), 
 																  loss_weight=self.cfg.RPN_CLS_LOSS_SET['binary_cross_entropy']['weight'],
 																  size_average=self.cfg.RPN_CLS_LOSS_SET['binary_cross_entropy']['size_average'],
 																  avg_factor=avg_factor)
