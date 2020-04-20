@@ -41,6 +41,7 @@ class rpnProposalLayer(nn.Module):
 			self.nms_thresh = cfg.TEST_RPN_NMS_THRESH	
 		else:
 			raise ValueError('Unkown mode <%s> in rpnProposalLayer...' % mode)
+	'''forward'''
 	def forward(self, x):
 		# parse x
 		probs_list, x_reg_list, rpn_features_shapes, img_info = x
@@ -111,6 +112,7 @@ class rpnBuildTargetLayer(nn.Module):
 		else:
 			raise ValueError('Unkown mode <%s> in rpnBuildTargetLayer...' % mode)
 		self.allowed_border = 0
+	'''forward'''
 	def forward(self, x):
 		# parse x
 		gt_boxes, rpn_features_shapes, img_info, num_gt_boxes = x
@@ -280,4 +282,4 @@ class RegionProposalNet(nn.Module):
 				xavierInit(layer, distribution='uniform')
 		# unsupport
 		else:
-			raise RuntimeError('Unsupport initializeAddedModules.init_method <%s>...' % init_method)
+			raise RuntimeError('Unsupport initWeights.init_method <%s>...' % init_method)
